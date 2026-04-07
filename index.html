@@ -3,339 +3,253 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Маскирование документов — Защита данных</title>
+<title>MaskData Pro — Корпоративная защита</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
   :root {
-    --bg: #12161d; --bg2: #1a1f28; --bg3: #222836;
-    --border: #313a4a; --border2: #3d4a5e;
-    --accent: #00d4aa; --accent2: #3aaaff;
-    --warn: #ff8c42; --danger: #ff5272;
-    --text: #f0f4fa; --text2: #b8c5d6; --text3: #7a8fa8;
-    --mono: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
-    --sans: 'Segoe UI', 'Inter', system-ui, sans-serif;
+    --bg: #0f1218; --bg2: #161b22; --bg3: #21262d;
+    --border: #30363d; --border2: #484f58;
+    --accent: #238636; --accent2: #2ea043;
+    --text: #c9d1d9; --text-dim: #8b949e;
+    --danger: #f85149; --mono: 'Cascadia Code', 'Fira Code', monospace;
   }
-
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; position: relative; }
-  body::before { content: ''; position: fixed; inset: 0; background-image: linear-gradient(rgba(0,212,170,.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0,212,170,.03) 1px, transparent 1px); background-size: 40px 40px; pointer-events: none; }
-
-  .app { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; padding: 32px 20px; }
-  header { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 40px; }
-  .header-icon { width: 48px; height: 48px; background: linear-gradient(135deg, var(--accent), var(--accent2)); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 22px; }
-  .header-text h1 { font-family: var(--mono); font-size: 1.25rem; font-weight: 700; color: var(--text); }
-  .header-text p { font-size: .8rem; color: var(--accent); font-family: var(--mono); text-transform: uppercase; }
-
-  .columns { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-  @media(max-width:768px){ .columns { grid-template-columns: 1fr; } }
-
-  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-bottom: 20px; }
-  .card-header { padding: 12px 18px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: .82rem; color: var(--text2); text-transform: uppercase; }
-  .card-body { padding: 18px; }
-
-  .drop-zone { border: 2px dashed var(--border2); border-radius: 8px; padding: 40px 20px; text-align: center; cursor: pointer; transition: .2s; position: relative; }
-  .drop-zone:hover { border-color: var(--accent); background: rgba(0,212,170,.04); }
-  .drop-zone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
-
-  .file-info { display: none; margin-top: 14px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 6px; padding: 10px 14px; font-family: var(--mono); font-size: .82rem; align-items: center; gap: 10px; }
-  .file-info.show { display: flex; }
-
-  .tab-nav { display: flex; gap: 2px; margin-bottom: 16px; background: var(--bg); border-radius: 6px; padding: 3px; border: 1px solid var(--border); }
-  .tab-btn { flex: 1; padding: 7px; border: none; border-radius: 4px; background: transparent; color: var(--text2); cursor: pointer; font-size: .82rem; }
-  .tab-btn.active { background: var(--bg3); color: var(--text); }
-
-  .btn-primary { width: 100%; padding: 13px; background: linear-gradient(135deg, var(--accent), #00b896); border: none; border-radius: 8px; color: #000; font-family: var(--mono); font-weight: 700; cursor: pointer; transition: .2s; }
-  .btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
-  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
-
-  .result-card { margin-top: 24px; display: none; }
-  .result-card.show { display: block; }
-  .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px; }
-  .stat-box { background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 12px; text-align: center; }
-  .stat-val { font-family: var(--mono); font-size: 1.4rem; color: var(--accent); font-weight: 700; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, system-ui, sans-serif; line-height: 1.5; }
+  .app { max-width: 1200px; margin: 0 auto; padding: 40px 20px; }
+  header { margin-bottom: 30px; border-bottom: 1px solid var(--border); padding-bottom: 20px; }
+  .columns { display: grid; grid-template-columns: 350px 1fr; gap: 30px; }
+  @media(max-width: 900px) { .columns { grid-template-columns: 1fr; } }
   
-  .changes-list { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 12px; max-height: 250px; overflow-y: auto; font-family: var(--mono); font-size: .75rem; }
-  .change-line { display: flex; gap: 8px; border-bottom: 1px solid var(--border); padding: 4px 0; align-items: center; }
-  .c-orig { color: var(--danger); text-decoration: line-through; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px; }
-  .c-mask { color: var(--accent); font-weight: bold; }
+  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+  .card-title { font-size: 0.9rem; font-weight: 600; margin-bottom: 15px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; }
   
-  #statusMsg { font-size: 0.85rem; line-height: 1.6; color: var(--text3); }
+  .drop-zone { border: 2px dashed var(--border); border-radius: 6px; padding: 30px; text-align: center; cursor: pointer; transition: 0.2s; }
+  .drop-zone:hover { border-color: var(--accent); background: #1c2128; }
+  
+  .category-item { display: flex; align-items: center; gap: 10px; padding: 8px; background: var(--bg3); border-radius: 4px; margin-bottom: 5px; font-size: 0.85rem; cursor: pointer; }
+  .category-item input { accent-color: var(--accent); }
+
+  .regex-box { background: #0d1117; border: 1px solid var(--border2); color: #79c0ff; padding: 12px; border-radius: 6px; width: 100%; font-family: var(--mono); font-size: 0.8rem; margin-top: 10px; }
+  
+  .btn { width: 100%; padding: 12px; border-radius: 6px; border: none; font-weight: 600; cursor: pointer; transition: 0.2s; font-family: var(--mono); }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-primary:hover { background: var(--accent2); }
+  .btn-primary:disabled { opacity: 0.3; }
+
+  .log-container { background: #0d1117; border-radius: 6px; padding: 15px; max-height: 400px; overflow-y: auto; font-family: var(--mono); font-size: 0.75rem; border: 1px solid var(--border); }
+  .log-item { display: flex; gap: 10px; border-bottom: 1px solid #21262d; padding: 5px 0; }
+  .log-orig { color: var(--danger); text-decoration: line-through; }
+  .log-mask { color: #aff5b4; font-weight: bold; }
+  
+  .help-text { font-size: 0.75rem; color: var(--text-dim); margin-top: 8px; line-height: 1.4; }
 </style>
 </head>
 <body>
 
 <div class="app">
   <header>
-    <div class="header-icon">🛡️</div>
-    <div class="header-text">
-      <h1>Маскирование и обфускация</h1>
-      <p>Защита ПДн и коммерческой тайны v3.0</p>
-    </div>
+    <h1 style="color: white;">🛡️ MaskData Pro <span style="font-size: 0.5em; vertical-align: middle; opacity: 0.6;">v4.0 Enterprise</span></h1>
+    <p style="color: var(--text-dim);">Локальная обфускация ПДн и коммерческих данных в любых документах</p>
   </header>
 
   <div class="columns">
-    <div>
+    <aside>
       <div class="card">
-        <div class="card-header">📁 Загрузка данных</div>
-        <div class="card-body">
-          <div class="drop-zone" id="dropZone">
-            <input type="file" id="fileInput" accept=".docx,.xlsx,.txt,.log,.json,.csv">
-            <div style="font-size: 32px">📄</div>
-            <div style="font-weight: 600; margin: 10px 0 5px">Выберите документ</div>
-            <div style="font-size: 0.7rem; color: var(--text3)">Поддерживаются все офисные и текстовые форматы</div>
-          </div>
-          <div class="file-info" id="fileInfo">
-            <span id="fileName" style="color: var(--accent2); flex: 1; overflow: hidden; text-overflow: ellipsis;">-</span>
-            <span id="fileRemove" style="cursor: pointer; color: var(--danger)">✕</span>
-          </div>
+        <div class="card-title">1. Загрузка файла</div>
+        <div class="drop-zone" onclick="document.getElementById('fileInput').click()">
+          <input type="file" id="fileInput" hidden onchange="handleFile(this.files[0])">
+          <div id="fileStatus">Нажмите для выбора<br><small>(Любые форматы)</small></div>
         </div>
       </div>
 
       <div class="card">
-        <div class="card-body">
-          <div class="tab-nav">
-            <button class="tab-btn active" data-tab="rules">Правила</button>
-            <button class="tab-btn" data-tab="custom">Свой Regex</button>
-          </div>
-          
-          <div class="tab-panel active" id="tab-rules">
-             <div style="font-size: 0.8rem; color: var(--text2); line-height: 1.5">
-               <strong style="color:var(--accent)">Автоматическое обнаружение:</strong>
-               <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top:10px; color: var(--accent2)">
-                 <span>• ФИО (Кириллица)</span>
-                 <span>• Телефоны / Email</span>
-                 <span>• ИНН / СНИЛС</span>
-                 <span>• Паспорта РФ</span>
-                 <span>• Банковские счета</span>
-                 <span>• IP-адреса / Ключи</span>
-               </div>
-             </div>
-          </div>
+        <div class="card-title">2. Шаблоны маскирования</div>
+        <label class="category-item">
+          <input type="checkbox" class="tpl-check" data-cat="personal" checked>
+          <span>Персональные данные (ФИО, Паспорт)</span>
+        </label>
+        <label class="category-item">
+          <input type="checkbox" class="tpl-check" data-cat="finance" checked>
+          <span>Коммерческая тайна (Счета, ИНН)</span>
+        </label>
+        <label class="category-item">
+          <input type="checkbox" class="tpl-check" data-cat="tech" checked>
+          <span>Техданные (IP, Ключи, Email)</span>
+        </label>
+      </div>
 
-          <div class="tab-panel" id="tab-custom">
-            <input type="text" id="customRegex" placeholder="Напр: [A-Z]{2}-\d{6}" 
-                   style="width: 100%; background: var(--bg); border: 1px solid var(--border2); color: #fff; padding: 10px; border-radius: 6px; font-family: var(--mono); outline: none;">
-          </div>
+      <div class="card">
+        <div class="card-title">3. Свой Regex</div>
+        <input type="text" id="customRegex" class="regex-box" placeholder="Напр: [A-Z]{3}-\d{4}">
+        <div class="help-text">
+          <b>Как пользоваться:</b> Введите регулярное выражение. Например, <code>\d{6}</code> найдет все 6-значные числа. Все совпадения будут заменены на <code>CUST_001</code>.
         </div>
       </div>
 
-      <button class="btn-primary" id="btnProcess">ЗАПУСТИТЬ ОБРАБОТКУ</button>
-    </div>
+      <button class="btn btn-primary" id="processBtn" disabled onclick="process()">ОБРАБОТАТЬ</button>
+    </aside>
 
-    <div>
-      <div class="card" style="min-height: 160px">
-        <div class="card-header">📊 Статус системы</div>
-        <div class="card-body" id="statusMsg">
-          Система готова к работе. Пожалуйста, загрузите файл для анализа.
-        </div>
-      </div>
-
-      <div class="result-card" id="resultCard">
+    <main>
+      <div id="resultArea" style="display: none;">
         <div class="card">
-          <div class="card-header" style="color: var(--accent)">✅ Результаты обработки</div>
-          <div class="card-body">
-            <div class="stat-grid">
-              <div class="stat-box"><div class="stat-val" id="stTotal">0</div><div style="font-size: 0.6rem">ЗАМЕН</div></div>
-              <div class="stat-box"><div class="stat-val" id="stUniq">0</div><div style="font-size: 0.6rem">УНИК.</div></div>
-              <div class="stat-box"><div class="stat-val" id="stTime">0</div><div style="font-size: 0.6rem">МС</div></div>
-            </div>
-            <div class="changes-list" id="logList"></div>
-            <button class="btn-primary" id="btnDownload" style="background: var(--accent2); margin-top: 15px">СКАЧАТЬ ЗАЩИЩЕННЫЙ ФАЙЛ</button>
+          <div class="card-title">Результат анализа</div>
+          <div style="display: flex; gap: 20px; margin-bottom: 20px;">
+            <div>Замен: <b id="statTotal" style="color: var(--accent2);">0</b></div>
+            <div>Уникальных сущностей: <b id="statUniq" style="color: #79c0ff;">0</b></div>
           </div>
+          <div class="log-container" id="logOutput"></div>
+          <button class="btn btn-primary" style="margin-top: 20px; background: #1f6feb;" onclick="download()">СКАЧАТЬ ФАЙЛ</button>
         </div>
       </div>
-    </div>
+      
+      <div id="welcomeMsg" class="card" style="text-align: center; color: var(--text-dim); padding: 100px 20px;">
+        Загрузите документ для начала работы.<br>Все вычисления происходят в вашем браузере.
+      </div>
+    </main>
   </div>
 </div>
 
 <script>
-  // --- УНИВЕРСАЛЬНЫЕ ПРАВИЛА (ПДн + Коммерция) ---
-  const PATTERNS = [
-    { id: 'EMAIL', re: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, prefix: 'EMAIL' },
-    { id: 'PHONE', re: /(?:\+7|8|7)[\s\-]?\(?[489]\d{2}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}/g, prefix: 'PHONE' },
-    // ФИО: поддержка сложных фамилий через дефис и инициалов
-    { id: 'FIO', re: /(?<![а-яА-ЯёЁ])[А-ЯЁ][а-яё]{1,20}(?:\s+[А-ЯЁ][а-яё]{1,20}(?:-[А-ЯЁ][а-яё]{1,20})?){1,2}(?![а-яА-ЯёЁ])/g, prefix: 'NAME' },
-    { id: 'PASSPORT', re: /(?<!\d)(?:\d{4}[\s]\d{6}|\d{10})(?!\d)/g, prefix: 'PASP' },
-    { id: 'INN', re: /(?<!\d)(?:\d{10}|\d{12})(?!\d)/g, prefix: 'INN' },
-    { id: 'SNILS', re: /(?<!\d)\d{3}-\d{3}-\d{3}\s\d{2}(?!\d)/g, prefix: 'SNILS' },
-    { id: 'CARD', re: /(?<!\d)\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}(?!\d)/g, prefix: 'CARD' },
-    { id: 'ACC', re: /(?<!\d)(?:407|408|423|301)\d{17}(?!\d)/g, prefix: 'ACC' },
-    { id: 'IP', re: /\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b/g, prefix: 'IP' }
-  ];
-
   let currentFile = null;
   let processedBlob = null;
   let maskMap = new Map();
   let logs = [];
 
-  // --- ЯДРО МАСКИРОВАНИЯ ---
-  function maskText(text) {
-    if (!text || typeof text !== 'string') return text;
-    let matches = [];
+  // --- ГРУППЫ ПРАВИЛ ---
+  const RULES = {
+    personal: [
+      { re: /(?<![а-яА-ЯёЁ])[А-ЯЁ][а-яё]{1,20}(?:\s+[А-ЯЁ][а-яё]{1,20}(?:-[А-ЯЁ][а-яё]{1,20})?){1,2}(?![а-яА-ЯёЁ])/g, pfx: 'NAME' },
+      { re: /(?<!\d)(?:\d{4}[\s]\d{6}|\d{10})(?!\d)/g, pfx: 'PASP' },
+      { re: /(?<!\d)\d{3}-\d{3}-\d{3}\s\d{2}(?!\d)/g, pfx: 'SNILS' }
+    ],
+    finance: [
+      { re: /(?<!\d)(?:\d{10}|\d{12})(?!\d)/g, pfx: 'INN' },
+      { re: /(?<!\d)(?:407|408|423|301)\d{17}(?!\d)/g, pfx: 'ACC' },
+      { re: /(?<!\d)\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}(?!\d)/g, pfx: 'CARD' }
+    ],
+    tech: [
+      { re: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, pfx: 'EMAIL' },
+      { re: /\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b/g, pfx: 'IP' },
+      { re: /(?:\+7|8|7)[\s\-]?\(?[489]\d{2}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}/g, pfx: 'PHONE' }
+    ]
+  };
 
-    // 1. Сбор совпадений
-    PATTERNS.forEach(p => {
-      let m; p.re.lastIndex = 0;
-      while ((m = p.re.exec(text)) !== null) {
-        matches.push({ start: m.index, end: m.index + m[0].length, val: m[0], prefix: p.prefix });
-      }
+  function handleFile(file) {
+    if (!file) return;
+    currentFile = file;
+    document.getElementById('fileStatus').innerHTML = `<b>${file.name}</b><br><small>${(file.size/1024).toFixed(1)} KB</small>`;
+    document.getElementById('processBtn').disabled = false;
+  }
+
+  function getActiveRules() {
+    let active = [];
+    document.querySelectorAll('.tpl-check:checked').forEach(cb => {
+      active = active.concat(RULES[cb.dataset.cat]);
     });
-
-    // 2. Свой Regex
+    
     const custom = document.getElementById('customRegex').value;
     if (custom) {
-      try {
-        const cr = new RegExp(custom, 'g');
-        let m;
-        while ((m = cr.exec(text)) !== null) {
-          matches.push({ start: m.index, end: m.index + m[0].length, val: m[0], prefix: 'CUST' });
-        }
-      } catch(e) {}
+      try { active.push({ re: new RegExp(custom, 'g'), pfx: 'CUST' }); } catch(e) { alert("Ошибка в вашем Regex!"); }
     }
+    return active;
+  }
 
-    if (matches.length === 0) return text;
+  function maskText(text) {
+    if (!text || typeof text !== 'string') return text;
+    let activeRules = getActiveRules();
+    let matches = [];
 
-    // 3. Разрешение конфликтов (перекрытия)
-    matches.sort((a, b) => (b.end - b.start) - (a.end - a.start) || a.start - b.start);
-    const finalMatches = [];
-    const used = new Set();
-
-    matches.forEach(m => {
-      let overlap = false;
-      for (let i = m.start; i < m.end; i++) if (used.has(i)) overlap = true;
-      if (!overlap) {
-        for (let i = m.start; i < m.end; i++) used.add(i);
-        finalMatches.push(m);
+    activeRules.forEach(rule => {
+      let m; rule.re.lastIndex = 0;
+      while ((m = rule.re.exec(text)) !== null) {
+        matches.push({ start: m.index, end: m.index + m[0].length, val: m[0], pfx: rule.pfx });
       }
     });
 
-    // 4. Замена
-    finalMatches.sort((a, b) => b.start - a.start);
+    matches.sort((a, b) => b.start - a.start);
+    
     let result = text;
-    finalMatches.forEach(m => {
+    matches.forEach(m => {
+      // Проверка на перекрытие
+      if (result.substring(m.start, m.end) !== m.val) return;
+      
       let mask;
       if (maskMap.has(m.val)) {
         mask = maskMap.get(m.val);
       } else {
-        mask = `${m.prefix}_${(maskMap.size + 1).toString().padStart(3, '0')}`;
+        mask = `${m.pfx}_${(maskMap.size + 1).toString().padStart(3, '0')}`;
         maskMap.set(m.val, mask);
         logs.push({ o: m.val, m: mask });
       }
       result = result.slice(0, m.start) + mask + result.slice(m.end);
     });
-
     return result;
   }
 
-  // --- ОБРАБОТКА ФОРМАТОВ ---
-  async function runProcessing() {
-    if (!currentFile) return alert("Файл не выбран");
-    
-    const startTime = Date.now();
+  async function process() {
     maskMap.clear(); logs = [];
-    const status = document.getElementById('statusMsg');
-    status.innerText = "⏳ Идет анализ и маскирование...";
-
     const ext = currentFile.name.split('.').pop().toLowerCase();
-
-    try {
-      if (['docx', 'xlsx'].includes(ext)) {
-        processedBlob = await processOfficeFile(currentFile, ext);
-      } else {
-        const text = await currentFile.text();
-        const result = maskText(text);
-        processedBlob = new Blob([result], { type: 'text/plain;charset=utf-8' });
-      }
-
-      // Обновление UI
-      document.getElementById('stTotal').innerText = logs.length;
-      document.getElementById('stUniq').innerText = maskMap.size;
-      document.getElementById('stTime').innerText = Date.now() - startTime;
-      document.getElementById('resultCard').classList.add('show');
-      status.innerText = "✅ Обработка завершена успешно.";
-
-      const logList = document.getElementById('logList');
-      logList.innerHTML = logs.slice(0, 150).map(l => `
-        <div class="change-line">
-          <span class="c-orig">${l.o}</span> ➡️ <span class="c-mask">${l.m}</span>
-        </div>
-      `).join('') + (logs.length > 150 ? '<div style="text-align:center; padding:10px">...и еще ' + (logs.length-150) + ' замен</div>' : '');
-
-    } catch (err) {
-      console.error(err);
-      status.innerText = "❌ Ошибка: " + err.message;
+    
+    if (['docx', 'xlsx', 'pptx'].includes(ext)) {
+      processedBlob = await processOffice();
+    } else if (ext === 'pdf') {
+      processedBlob = await processPdf();
+    } else {
+      const content = await currentFile.text();
+      processedBlob = new Blob([maskText(content)], { type: 'text/plain' });
     }
+
+    renderResults();
   }
 
-  // --- УЛУЧШЕННЫЙ АЛГОРИТМ ДЛЯ OFFICE (ZIP) ---
-  async function processOfficeFile(file, ext) {
-    const zip = await JSZip.loadAsync(file);
-    const targets = ext === 'docx' ? 
-      ['word/document.xml', 'word/header1.xml', 'word/footer1.xml', 'word/footnotes.xml'] : 
-      ['xl/sharedStrings.xml'];
-
-    for (const path of targets) {
-      if (zip.file(path)) {
-        let xml = await zip.file(path).async("string");
-        
-        // Маскирование внутри тегов <w:t> (Word) или <t> (Excel)
-        // Использование нежадного поиска для захвата текста между тегами
-        xml = xml.replace(/(<[w:]?t[^>]*>)(.*?)(<\/[w:]?t>)/gs, (match, open, text, close) => {
-          // Декодируем XML сущности перед маскированием (напр. & -> &)
-          const decoded = text.replace(/&/g, '&').replace(/</g, '<').replace(/>/g, '>');
-          const masked = maskText(decoded);
-          // Кодируем обратно
-          const encoded = masked.replace(/&/g, '&').replace(/</g, '<').replace(/>/g, '>');
-          return open + encoded + close;
+  async function processOffice() {
+    const zip = await JSZip.loadAsync(currentFile);
+    // Обходим все XML файлы внутри архива (текст, колонтитулы, сноски)
+    for (const [path, file] of Object.entries(zip.files)) {
+      if (path.endsWith('.xml')) {
+        let xml = await file.async("string");
+        xml = xml.replace(/(<[w:]?t[^>]*>)(.*?)(<\/[w:]?t>)/gs, (m, open, text, close) => {
+          return open + maskText(text) + close;
         });
-        
         zip.file(path, xml);
       }
     }
-
-    return await zip.generateAsync({
-      type: "blob",
-      compression: "DEFLATE",
-      mimeType: file.type
-    });
+    return await zip.generateAsync({ type: "blob" });
   }
 
-  // --- UI EVENTS ---
-  const fileInput = document.getElementById('fileInput');
-  fileInput.onchange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      currentFile = file;
-      document.getElementById('fileName').innerText = file.name;
-      document.getElementById('fileInfo').classList.add('show');
-      document.getElementById('resultCard').classList.remove('show');
-      document.getElementById('statusMsg').innerText = "Файл загружен. Нажмите 'ЗАПУСТИТЬ'.";
-    }
-  };
+  async function processPdf() {
+    const buffer = await currentFile.arrayBuffer();
+    const decoder = new TextDecoder('latin1');
+    const encoder = new TextEncoder();
+    let content = decoder.decode(buffer);
 
-  document.getElementById('fileRemove').onclick = () => {
-    currentFile = null;
-    document.getElementById('fileInfo').classList.remove('show');
-    fileInput.value = "";
-  };
+    // Маскируем текстовые объекты PDF (строки в скобках)
+    content = content.replace(/\((.*?)\)\s*Tj/g, (m, text) => {
+      return `(${maskText(text)}) Tj`;
+    });
 
-  document.getElementById('btnProcess').onclick = runProcessing;
+    return new Blob([encoder.encode(content)], { type: 'application/pdf' });
+  }
 
-  document.getElementById('btnDownload').onclick = () => {
+  function renderResults() {
+    document.getElementById('welcomeMsg').style.display = 'none';
+    document.getElementById('resultArea').style.display = 'block';
+    document.getElementById('statTotal').innerText = logs.length;
+    document.getElementById('statUniq').innerText = maskMap.size;
+    
+    document.getElementById('logOutput').innerHTML = logs.map(l => `
+      <div class="log-item">
+        <span class="log-orig">${l.o}</span> ➜ <span class="log-mask">${l.m}</span>
+      </div>
+    `).join('');
+  }
+
+  function download() {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(processedBlob);
-    a.download = "PROTECTED_" + currentFile.name;
+    a.download = "MASKED_" + currentFile.name;
     a.click();
-  };
-
-  document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.onclick = () => {
-      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-      btn.classList.add('active');
-      document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
-    };
-  });
+  }
 </script>
 </body>
 </html>
