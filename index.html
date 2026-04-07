@@ -122,7 +122,7 @@
     background: rgba(0,212,170,.04);
   }
   .drop-zone input[type=file] {
-    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%;
+    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
   }
   .drop-icon { font-size: 32px; margin-bottom: 10px; }
   .drop-title { font-size: .95rem; font-weight: 600; color: var(--text); margin-bottom: 4px; }
@@ -349,7 +349,7 @@
       <h1>Маскирование документов и лог файлов<br>корпоративных систем</h1>
       <p>Защита чувствительных данных</p>
     </div>
-    <div class="badge"><span class="dot"></span>v2.8 offline</div>
+    <div class="badge"><span class="dot"></span>v2.1 offline</div>
   </header>
 
   <div class="columns">
@@ -604,147 +604,85 @@ let currentFile = null;
 let processedBlob = null;
 let changeLog = [];
 
-// ─── PATTERN LIBRARY ─── //
-// NOTE: \b does NOT work with Cyrillic in JS — use lookahead/lookbehind instead
-const PATTERNS = {
+// ─── PATTERN SOURCES ─── //
+// Stored as {src, flags} strings — a FRESH RegExp is created on every maskText() call.
+// This is critical: /g regexes are STATEFUL (lastIndex) — sharing them across
+// multiple maskText() calls (e.g. per-paragraph in DOCX) causes silent misses.
+const PAT_SOURCES = {
   // ── Personal ──
-  EMAIL: {
-    re: /[a-zA-Z0-9._%+\-]{1,64}@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g,
-    cat:'personal', prefix:'EMAIL'
-  },
-  PHONE: {
-    re: /(?:(?:\+7|8|7)[\s\-]?\(?[489]\d{2}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2})|(?<!\d)(?:[489]\d{2})[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}(?!\d)/g,
-    cat:'personal', prefix:'PHONE'
-  },
-  FULL_NAME: {
-    re: /(?<![а-яёА-ЯЁ])[А-ЯЁ][а-яё]{1,20}(?:\s+[А-ЯЁ][а-яё]{1,20}){1,2}(?![а-яёА-ЯЁ])/g,
-    cat:'personal', prefix:'NAME'
-  },
-  PASSPORT: {
-    re: /(?<!\d)(?:\d{4}[\s\-]\d{6}|\d{10})(?!\d)/g,
-    cat:'personal', prefix:'PASP'
-  },
-  SNILS: {
-    re: /(?<!\d)\d{3}-\d{3}-\d{3}[ ]\d{2}(?!\d)/g,
-    cat:'personal', prefix:'SNILS'
-  },
-  INN_PERS: {
-    re: /(?:ИНН|инн)[:\s]*\d{12}|(?<!\d)\d{12}(?!\d)/gi,
-    cat:'personal', prefix:'INN_P'
-  },
-  ADDRESS: {
-    re: /(?:г\.?|ул\.?|пр\.?|пер\.?|д\.?|кв\.?) [а-яёА-ЯЁ\w .,\-№]{3,60}/gi,
-    cat:'personal', prefix:'ADDR'
-  },
-  BIRTHDATE: {
-    re: /(?:дата рождения|д\.р\.|born|birthday)[ :]*\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4}/gi,
-    cat:'personal', prefix:'BDATE'
-  },
-
+  EMAIL:     { s:'[a-zA-Z0-9._%+\\-]{1,64}@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}',                               f:'g',  cat:'personal',   pre:'EMAIL'  },
+  PHONE:     { s:'(?:(?:\\+7|8|7)[\\s\\-]?\\(?[489]\\d{2}\\)?[\\s\\-]?\\d{3}[\\s\\-]?\\d{2}[\\s\\-]?\\d{2})|(?<!\\d)[489]\\d{2}[\\s\\-]?\\d{3}[\\s\\-]?\\d{2}[\\s\\-]?\\d{2}(?!\\d)', f:'g', cat:'personal', pre:'PHONE' },
+  FULL_NAME: { s:'(?<![\\u0400-\\u04FF])[\\u0410-\\u042F\\u0401][\\u0430-\\u044F\\u0451]{1,20}(?:\\s+[\\u0410-\\u042F\\u0401][\\u0430-\\u044F\\u0451]{1,20}){1,2}(?![\\u0400-\\u04FF])', f:'g', cat:'personal', pre:'NAME' },
+  PASSPORT:  { s:'(?<!\\d)(?:\\d{4}[\\s]\\d{6}|(?<![\\d\\-])\\d{10}(?!\\d))',                               f:'g',  cat:'personal',   pre:'PASP'   },
+  SNILS:     { s:'(?<!\\d)\\d{3}-\\d{3}-\\d{3}\\s\\d{2}(?!\\d)',                                            f:'g',  cat:'personal',   pre:'SNILS'  },
+  INN_PERS:  { s:'(?:ИНН|инн)[:\\s]*\\d{12}',                                                               f:'gi', cat:'personal',   pre:'INN_P'  },
+  ADDRESS:   { s:'(?:г(?:ород)?[.\\s]|ул(?:ица)?[.\\s]|пр(?:оспект)?[.\\s]|пер(?:еулок)?[.\\s]|д(?:ом)?[.\\s]|кв[.\\s])[\\u0400-\\u04FFa-zA-Z0-9\\s.,\\-№]{2,50}', f:'gi', cat:'personal', pre:'ADDR' },
+  BIRTHDATE: { s:'(?:дата\\s*рождения|д\\.?р\\.?|born)[:\\s]*\\d{1,2}[.\\-\\/]\\d{1,2}[.\\-\\/]\\d{2,4}', f:'gi', cat:'personal',   pre:'BDATE'  },
   // ── Commercial ──
-  INN_ORG: {
-    re: /(?:ИНН|инн)[:\s]*\d{10}(?!\d)|(?<!\d)\d{10}(?!\d)(?=[^\d]|$)/gi,
-    cat:'commercial', prefix:'INN'
-  },
-  OGRN: {
-    re: /(?:ОГРН|огрн)[:\s]*\d{13,15}|(?<!\d)[135]\d{12}(?!\d)|(?<!\d)[356]\d{14}(?!\d)/gi,
-    cat:'commercial', prefix:'OGRN'
-  },
-  BIC: {
-    re: /(?:БИК|бик)[:\s]*\d{9}|(?<!\d)04\d{7}(?!\d)/gi,
-    cat:'commercial', prefix:'BIC'
-  },
-  ACCOUNT: {
-    re: /(?<!\d)\d{20}(?!\d)/g,
-    cat:'commercial', prefix:'ACC'
-  },
-  AMOUNT: {
-    re: /(?<!\w)\d[\d\s]{1,14}\d\s*(?:руб(?:лей|\.)?|₽|RUB|USD|EUR|\$|€)/gi,
-    cat:'commercial', prefix:'AMOUNT'
-  },
-
+  INN_ORG:   { s:'(?:ИНН|инн)[:\\s]*\\d{10}(?!\\d)',                                                        f:'gi', cat:'commercial', pre:'INN'    },
+  OGRN:      { s:'(?:ОГРН|огрн)[:\\s]*\\d{13,15}|(?<!\\d)[135]\\d{12}(?!\\d)',                              f:'gi', cat:'commercial', pre:'OGRN'   },
+  BIC:       { s:'(?:БИК|бик)[:\\s]*\\d{9}|(?<!\\d)04\\d{7}(?!\\d)',                                        f:'gi', cat:'commercial', pre:'BIC'    },
+  ACCOUNT:   { s:'(?<!\\d)(?:40|42|30|301|408)\\d{18}(?!\\d)',                                               f:'g',  cat:'commercial', pre:'ACC'    },
+  AMOUNT:    { s:'(?<!\\w)\\d[\\d\\s]{0,14}\\d\\s*(?:руб(?:лей|\\.)?|₽|RUB|USD|EUR|\\$|€)',                 f:'gi', cat:'commercial', pre:'AMOUNT' },
   // ── Technical ──
-  IPv4: {
-    re: /(?<!\d)(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)(?!\d)/g,
-    cat:'technical', prefix:'IP'
-  },
-  IPv6: {
-    re: /(?<![0-9a-fA-F:])(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}(?![0-9a-fA-F:])/g,
-    cat:'technical', prefix:'IPV6'
-  },
-  MAC: {
-    re: /(?<![0-9a-fA-F])(?:[0-9a-fA-F]{2}[:\-]){5}[0-9a-fA-F]{2}(?![0-9a-fA-F])/g,
-    cat:'technical', prefix:'MAC'
-  },
-  API_KEY: {
-    re: /(?:api[-_]?key|apikey|access[-_]?token|bearer)\s*[=:]\s*["']?[A-Za-z0-9\-_.~+/]{16,}["']?/gi,
-    cat:'technical', prefix:'APIKEY'
-  },
-  PASSWORD: {
-    re: /(?:password|passwd|pwd|secret|pass|credentials?)\s*[=:]\s*["']?[^\s"',;<>\r\n]{4,}["']?/gi,
-    cat:'technical', prefix:'PWD'
-  },
-  CONN_STR: {
-    re: /(?:Server|Data Source|Hostname?|Host)\s*=\s*[^\s;,"'\r\n]{3,}/gi,
-    cat:'technical', prefix:'HOST'
-  },
-  TOKEN_JWT: {
-    re: /eyJ[A-Za-z0-9\-_]+\.eyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_.+/]*/g,
-    cat:'technical', prefix:'JWT'
-  },
-
+  IPv4:      { s:'(?<!\\d)(?:(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\.){3}(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)(?!\\d)', f:'g', cat:'technical', pre:'IP' },
+  IPv6:      { s:'(?<![0-9a-fA-F:])(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}(?![0-9a-fA-F:])',              f:'g',  cat:'technical',  pre:'IPV6'   },
+  MAC:       { s:'(?<![0-9a-fA-F])(?:[0-9a-fA-F]{2}[:\\-]){5}[0-9a-fA-F]{2}(?![0-9a-fA-F])',               f:'g',  cat:'technical',  pre:'MAC'    },
+  API_KEY:   { s:'(?:api[_\\-]?key|apikey|access[_\\-]?token|bearer|x-api-key)\\s*[=:\\s]+["\']?[A-Za-z0-9\\-_.~+\\/]{16,}["\']?', f:'gi', cat:'technical', pre:'APIKEY' },
+  PASSWORD:  { s:'(?:password|passwd|pwd|secret|pass)\\s*[=:]\\s*["\']?[^\\s"\'<>;,\\r\\n]{4,}["\']?',       f:'gi', cat:'technical',  pre:'PWD'    },
+  CONN_STR:  { s:'(?:Server|Hostname?|Data\\s*Source)\\s*=\\s*[^\\s;,"\'\\r\\n]{3,}',                        f:'gi', cat:'technical',  pre:'HOST'   },
+  TOKEN_JWT: { s:'eyJ[A-Za-z0-9\\-_]+\\.eyJ[A-Za-z0-9\\-_]+\\.[A-Za-z0-9\\-_.+\\/]*',                       f:'g',  cat:'technical',  pre:'JWT'    },
+  PRIV_KEY:  { s:'-----BEGIN[A-Z ]+PRIVATE KEY-----[\\s\\S]+?-----END[A-Z ]+PRIVATE KEY-----',               f:'g',  cat:'technical',  pre:'PRIVKEY'},
   // ── SAP ──
-  SAP_GUID: {
-    re: /(?<![0-9A-Fa-f])[0-9A-F]{8}[-]?[0-9A-F]{4}[-]?[0-9A-F]{4}[-]?[0-9A-F]{4}[-]?[0-9A-F]{12}(?![0-9A-Fa-f])/g,
-    cat:'sap', prefix:'GUID'
-  },
-  SAP_BNAME:  { re: /BNAME\s*=\s*["']?[\w.@\-]{3,}["']?/gi,  cat:'sap', prefix:'BNAME' },
-  SAP_KUNNR:  { re: /KUNNR\s*=\s*["']?\d{6,10}["']?/gi,       cat:'sap', prefix:'KUNNR' },
-  SAP_TCODE:  { re: /TCODE\s*=\s*["']?\w{2,8}["']?/gi,        cat:'sap', prefix:'TCODE' },
-  SAP_MANDT:  { re: /MANDT\s*=\s*["']?\d{3}["']?/gi,          cat:'sap', prefix:'MANDT' },
-
+  SAP_GUID:  { s:'(?<![0-9A-Fa-f\\-])[0-9A-F]{8}-?[0-9A-F]{4}-?[0-9A-F]{4}-?[0-9A-F]{4}-?[0-9A-F]{12}(?![0-9A-Fa-f\\-])', f:'g', cat:'sap', pre:'GUID' },
+  SAP_BNAME: { s:'BNAME\\s*=\\s*["\']?[\\w.@\\-]{3,}["\']?',                                                f:'gi', cat:'sap',        pre:'BNAME'  },
+  SAP_KUNNR: { s:'KUNNR\\s*=\\s*["\']?\\d{6,10}["\']?',                                                     f:'gi', cat:'sap',        pre:'KUNNR'  },
+  SAP_TCODE: { s:'TCODE\\s*=\\s*["\']?\\w{2,8}["\']?',                                                      f:'gi', cat:'sap',        pre:'TCODE'  },
+  SAP_MANDT: { s:'MANDT\\s*=\\s*["\']?\\d{3}["\']?',                                                        f:'gi', cat:'sap',        pre:'MANDT'  },
   // ── Siebel ──
-  SBL_ROWID:  { re: /ROW_ID\s*=\s*["']?[\w\-]{10,}["']?/gi,  cat:'siebel', prefix:'ROWID' },
-  SBL_BUSOBJ: { re: /BusObject(?:Name)?\s*=\s*["']?[\w\s]{3,}["']?/gi, cat:'siebel', prefix:'BUSOBJ' },
-
+  SBL_ROWID:  { s:'ROW_ID\\s*=\\s*["\']?[\\w\\-]{10,}["\']?',                                               f:'gi', cat:'siebel',    pre:'ROWID'  },
+  SBL_BUSOBJ: { s:'BusObject(?:Name)?\\s*=\\s*["\']?[\\w\\s]{3,}["\']?',                                    f:'gi', cat:'siebel',    pre:'BUSOBJ' },
   // ── Documentum ──
-  DCT_OBJID:  { re: /r_object_id\s*=\s*["']?[0-9a-f]{16}["']?/gi, cat:'documentum', prefix:'OBJID' },
-  DCT_WF:     { re: /workflow[-_]?id\s*=\s*["']?[\w\-]{6,}["']?/gi, cat:'documentum', prefix:'WFID' },
-
+  DCT_OBJID:  { s:'r_object_id\\s*=\\s*["\']?[0-9a-f]{16}["\']?',                                           f:'gi', cat:'documentum', pre:'OBJID' },
+  DCT_WF:     { s:'workflow[_\\-]?id\\s*=\\s*["\']?[\\w\\-]{6,}["\']?',                                     f:'gi', cat:'documentum', pre:'WFID'  },
   // ── Web server ──
-  WEB_UA:     { re: /(?:User-Agent|useragent):\s*[^\r\n]+/gi, cat:'webserver', prefix:'UA' },
-  WEB_COOKIE: { re: /(?:Cookie|Set-Cookie):\s*[^\r\n]+/gi,    cat:'webserver', prefix:'COOKIE' },
-  WEB_REFERER:{ re: /Referer:\s*https?:\/\/[^\s\r\n]+/gi,     cat:'webserver', prefix:'REFERER' },
-  WEB_IP_LOG: { re: /^(?:\d{1,3}\.){3}\d{1,3}(?=\s)/gm,      cat:'webserver', prefix:'IP' },
-
+  WEB_UA:     { s:'(?:User-Agent|useragent):\\s*[^\\r\\n]+',                                                 f:'gi', cat:'webserver', pre:'UA'     },
+  WEB_COOKIE: { s:'(?:Cookie|Set-Cookie):\\s*[^\\r\\n]+',                                                    f:'gi', cat:'webserver', pre:'COOKIE' },
+  WEB_REFERER:{ s:'Referer:\\s*https?:\\/\\/[^\\s\\r\\n]+',                                                  f:'gi', cat:'webserver', pre:'REFER'  },
   // ── Database ──
-  DB_PWD:     { re: /(?:Password|Pwd)\s*=\s*[^;,"'\s\r\n]+/gi,  cat:'db', prefix:'DBPWD' },
-  DB_UID:     { re: /(?:User Id|UID|User)\s*=\s*[^;,"'\s\r\n]+/gi, cat:'db', prefix:'DBUID' },
+  DB_PWD:     { s:'(?:Password|Pwd)\\s*=\\s*[^;,"\'\\s\\r\\n]+',                                            f:'gi', cat:'db',        pre:'DBPWD'  },
+  DB_UID:     { s:'(?:User\\s*Id|UID|User)\\s*=\\s*[^;,"\'\\s\\r\\n]+',                                     f:'gi', cat:'db',        pre:'DBUID'  },
 };
 
-// Date/status patterns — these values should NOT be masked
-// Important: skip only pure date/status values, not mixed content
-const SKIP_RE = [
-  // Pure ISO date
-  /^\d{4}[-.]\d{2}[-.]\d{2}(?:T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})?)?$/,
-  // Pure RU date
-  /^\d{1,2}[.\/]\d{1,2}[.\/]\d{2,4}$/,
-  // Log severity word alone
-  /^(?:DEBUG|INFO|WARN(?:ING)?|ERROR|FATAL|NOTICE|CRITICAL|TRACE)$/i,
-  // Boolean / null alone
-  /^(?:true|false|null|none|undefined|yes|no|да|нет)$/i,
-  // Pure number (not phone/passport — those caught by specific patterns)
-  /^\d{1,3}(?:[.,]\d{1,3})*$/,
-];
+// Map category → pattern keys
+const CAT_MAP = {
+  personal:    ['EMAIL','PHONE','FULL_NAME','PASSPORT','SNILS','INN_PERS','ADDRESS','BIRTHDATE'],
+  commercial:  ['INN_ORG','OGRN','BIC','ACCOUNT','AMOUNT'],
+  technical:   ['IPv4','IPv6','MAC','API_KEY','PASSWORD','CONN_STR','TOKEN_JWT','PRIV_KEY'],
+};
+const TPL_MAP = {
+  universal:   ['EMAIL','PHONE','FULL_NAME','PASSPORT','SNILS','INN_PERS','ADDRESS','IPv4','IPv6','PASSWORD'],
+  sap:         ['SAP_GUID','SAP_BNAME','SAP_KUNNR','SAP_TCODE','SAP_MANDT'],
+  siebel:      ['SBL_ROWID','SBL_BUSOBJ'],
+  documentum:  ['DCT_OBJID','DCT_WF'],
+  webserver:   ['WEB_UA','WEB_COOKIE','WEB_REFERER','IPv4','IPv6'],
+  db:          ['DB_PWD','DB_UID','CONN_STR'],
+};
 
+// ── Skip patterns (values that must NEVER be masked) ──
+const SKIP_RE = [
+  /^\d{4}[.\-\/]\d{2}[.\-\/]\d{2}(?:T\d{2}:\d{2}:\d{2}(?:Z|[+\-]\d{2}:\d{2})?)?$/,
+  /^\d{1,2}[.\-\/]\d{1,2}[.\-\/]\d{2,4}$/,
+  /^(?:DEBUG|INFO|WARN(?:ING)?|ERROR|FATAL|NOTICE|CRITICAL|TRACE)$/i,
+  /^(?:true|false|null|none|undefined|yes|no|да|нет)$/i,
+];
 function shouldSkip(val) {
   if (!SETTINGS.dates) return false;
-  const trimmed = val.trim();
-  return SKIP_RE.some(r => r.test(trimmed));
+  return SKIP_RE.some(r => r.test(val.trim()));
 }
 
-// Masking state
-const maskMaps = {}; // { prefix: { original: 'PREFIX_0001', ... } }
+// ── Masking state ──
+const maskMaps = {};
 const counters  = {};
 
 function getMask(original, prefix, cat) {
@@ -766,80 +704,82 @@ function resetMasker() {
   changeLog = [];
 }
 
-function getActivePatterns() {
-  const cats = getActiveCategories();
-  const tpl   = getActiveTemplate();
-  const result = {};
-
-  // Map categories to pattern keys
-  const catMap = {
-    personal:    ['EMAIL','PHONE','FULL_NAME','PASSPORT','SNILS','INN_PERS','ADDRESS'],
-    commercial:  ['INN_ORG','OGRN','BIC','ACCOUNT'],
-    technical:   ['IPv4','IPv6','MAC','API_KEY','PASSWORD','CONN_STR','TOKEN_JWT'],
-  };
-  const tplMap = {
-    sap:        ['SAP_GUID','SAP_BNAME','SAP_KUNNR','SAP_TCODE','SAP_MANDT'],
-    siebel:     ['SBL_ROWID','SBL_BUSOBJ'],
-    documentum: ['DCT_OBJID','DCT_WF'],
-    webserver:  ['WEB_UA','WEB_COOKIE','WEB_REFERER','IPv4','IPv6'],
-    db:         ['DB_PWD','DB_UID','CONN_STR'],
-    universal:  ['EMAIL','PHONE','FULL_NAME','PASSPORT','SNILS','INN_PERS','ADDRESS','IPv4','IPv6'],
-  };
-
-  cats.forEach(c => { (catMap[c]||[]).forEach(k => result[k] = PATTERNS[k]); });
-  (tplMap[tpl]||[]).forEach(k => { if(PATTERNS[k]) result[k] = PATTERNS[k]; });
-
-  return result;
+// ── XML entity decoder ──
+// XLSX/DOCX sometimes store Cyrillic as &#NNNN; numeric entities.
+// Decode before masking so patterns match, then return plain UTF-8.
+function decodeXmlEntities(str) {
+  return str
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(parseInt(d)))
+    .replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'");
+}
+function encodeXmlText(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-function maskText(text) {
-  const patterns = getActivePatterns();
-  let result = text;
+// ── Build fresh regex list for this call ──
+// CRITICAL: never cache /g regexes across calls — lastIndex causes silent misses!
+function buildPatterns() {
+  const cats = getActiveCategories();
+  const tpl  = getActiveTemplate();
+  const keys = new Set();
+  cats.forEach(c => (CAT_MAP[c]||[]).forEach(k => keys.add(k)));
+  (TPL_MAP[tpl]||[]).forEach(k => keys.add(k));
 
-  // Reset regex lastIndex
-  Object.values(patterns).forEach(p => { if(p) p.re.lastIndex = 0; });
+  const result = [];
+  keys.forEach(k => {
+    const p = PAT_SOURCES[k];
+    if (p) result.push({ re: new RegExp(p.s, p.f), cat: p.cat, prefix: p.pre });
+  });
 
-  // Custom patterns — read from rule editor (format: pattern|||PREFIX per line)
+  // Custom patterns from UI
   const customRaw = document.getElementById('customRegex').value.trim();
-  const customPatterns = [];
   if (customRaw) {
     customRaw.split('\n').filter(Boolean).forEach(line => {
       const [pat, pfx] = line.split('|||');
-      const prefix = (pfx || 'CUSTOM').trim().toUpperCase();
-      try { customPatterns.push({ re: new RegExp(pat.trim(), 'g'), prefix, cat:'custom' }); } catch(e){}
+      const prefix = (pfx||'CUSTOM').trim().toUpperCase();
+      try { result.push({ re: new RegExp(pat.trim(), 'g'), cat:'custom', prefix }); } catch(e){}
     });
   }
+  return result;
+}
 
-  const allPatterns = [
-    ...Object.values(patterns).filter(Boolean),
-    ...customPatterns,
-  ];
+// ── Core masking function ──
+function maskText(text) {
+  if (!text || !text.trim()) return text;
+  const patterns = buildPatterns(); // fresh regex every call
 
-  // Collect all matches with positions
+  // Collect all non-overlapping matches
   const matches = [];
-  allPatterns.forEach(p => {
-    p.re.lastIndex = 0;
+  for (const p of patterns) {
     let m;
-    while ((m = p.re.exec(result)) !== null) {
-      if (!shouldSkip(m[0])) {
-        matches.push({ start: m.index, end: m.index + m[0].length, original: m[0], prefix: p.prefix, cat: p.cat });
+    while ((m = p.re.exec(text)) !== null) {
+      const val = m[0];
+      if (!shouldSkip(val)) {
+        matches.push({ start: m.index, end: m.index + val.length, val, prefix: p.prefix, cat: p.cat });
       }
-      p.re.lastIndex = m.index + 1;
+      // Advance by 1 to avoid infinite loop on zero-length matches
+      if (p.re.lastIndex === m.index) p.re.lastIndex++;
     }
-  });
+  }
 
-  // Sort by position, deduplicate overlaps
-  matches.sort((a,b) => a.start - b.start);
+  if (!matches.length) return text;
+
+  // Sort + deduplicate overlapping spans (keep first/longest)
+  matches.sort((a,b) => a.start - b.start || b.end - a.end);
   const kept = [];
   let lastEnd = 0;
-  matches.forEach(m => { if (m.start >= lastEnd) { kept.push(m); lastEnd = m.end; } });
+  for (const m of matches) {
+    if (m.start >= lastEnd) { kept.push(m); lastEnd = m.end; }
+  }
 
-  // Replace from end to start
-  kept.reverse().forEach(m => {
-    const mask = getMask(m.original, m.prefix, m.cat);
+  // Replace right-to-left to preserve indices
+  let result = text;
+  for (let i = kept.length - 1; i >= 0; i--) {
+    const m = kept[i];
+    const mask = getMask(m.val, m.prefix, m.cat);
     result = result.slice(0, m.start) + mask + result.slice(m.end);
-  });
-
+  }
   return result;
 }
 
@@ -847,51 +787,27 @@ function maskText(text) {
 
 async function processFile(file) {
   const ext = file.name.split('.').pop().toLowerCase();
-  const BINARY_EXTS = ['xlsx','docx','pdf','xls','doc'];
 
   if (ext === 'json') {
     const text = await readText(file);
     try {
       const obj = JSON.parse(text);
-      const masked = maskJSON(obj);
-      return new Blob([JSON.stringify(masked, null, 2)], {type:'application/json'});
+      return new Blob([JSON.stringify(maskJSON(obj), null, 2)], {type:'application/json'});
     } catch(e) {
       return new Blob([maskText(text)], {type:'text/plain'});
     }
   }
-
-  if (ext === 'xml') {
-    const text = await readText(file);
-    return new Blob([maskXML(text)], {type:'application/xml'});
-  }
-
-  if (ext === 'csv' || ext === 'tsv') {
-    const text = await readText(file);
-    return new Blob([maskCSV(text, ext==='tsv'?'\t':',')], {type:'text/plain'});
-  }
-
-  if (ext === 'docx') return await maskDocx(file);
-  if (ext === 'xlsx' || ext === 'xls') return await maskXlsx(file);
-  if (ext === 'pdf') return await maskPdf(file);
-
-  if (ext === 'yaml' || ext === 'yml') {
-    const text = await readText(file);
-    return new Blob([maskYaml(text)], {type:'text/plain'});
-  }
-
-  if (ext === 'ini' || ext === 'cfg' || ext === 'conf') {
-    const text = await readText(file);
-    return new Blob([maskIni(text)], {type:'text/plain'});
-  }
-
-  if (ext === 'sql') {
-    const text = await readText(file);
-    return new Blob([maskSQL(text)], {type:'text/plain'});
-  }
-
-  // fallback: plain text (LOG, TXT, Syslog, Apache, Nginx, etc.)
-  const text = await readText(file);
-  return new Blob([maskText(text)], {type:'text/plain'});
+  if (ext === 'xml')  return new Blob([maskXML(await readText(file))],  {type:'application/xml'});
+  if (ext === 'csv')  return new Blob([maskCSV(await readText(file), ',')], {type:'text/plain'});
+  if (ext === 'tsv')  return new Blob([maskCSV(await readText(file), '\t')], {type:'text/plain'});
+  if (ext === 'docx') return maskDocx(file);
+  if (ext === 'xlsx' || ext === 'xls') return maskXlsx(file);
+  if (ext === 'pdf')  return maskPdf(file);
+  if (ext === 'yaml' || ext === 'yml') return new Blob([maskYaml(await readText(file))], {type:'text/plain'});
+  if (ext === 'ini' || ext === 'cfg' || ext === 'conf') return new Blob([maskIni(await readText(file))], {type:'text/plain'});
+  if (ext === 'sql')  return new Blob([maskSQL(await readText(file))], {type:'text/plain'});
+  // Fallback: plain text
+  return new Blob([maskText(await readText(file))], {type:'text/plain'});
 }
 
 function readText(file) {
@@ -912,15 +828,13 @@ function readArrayBuffer(file) {
   });
 }
 
-// JSON: recurse, mask string values
+// JSON: recurse, mask strings — skip date/id keys
 function maskJSON(obj, depth=0) {
   if (depth > 50) return obj;
-  if (typeof obj === 'string') {
-    return shouldSkip(obj) ? obj : maskText(obj);
-  }
+  if (typeof obj === 'string') return shouldSkip(obj) ? obj : maskText(obj);
   if (Array.isArray(obj)) return obj.map(v => maskJSON(v, depth+1));
-  if (obj !== null && typeof obj === 'object') {
-    const SKIP_KEYS = /^(date|time|created|updated|modified|timestamp|status|type|role|level|code|flag|action|version|id$|_id$)/i;
+  if (obj && typeof obj === 'object') {
+    const SKIP_KEYS = /^(date|time|created|updated|modified|timestamp|status|type|role|level|code|flag|action|version|_?id)$/i;
     const out = {};
     for (const [k,v] of Object.entries(obj)) {
       out[k] = SKIP_KEYS.test(k) ? v : maskJSON(v, depth+1);
@@ -930,47 +844,41 @@ function maskJSON(obj, depth=0) {
   return obj;
 }
 
-// XML: mask text nodes, skip attributes like type, status
+// XML: mask text nodes, skip structural attributes
 function maskXML(text) {
-  // Mask text content between tags (not attribute values for type/status)
-  return text.replace(/>([^<]+)</g, (m, inner) => {
-    if (/^\s*$/.test(inner)) return m;
-    if (shouldSkip(inner.trim())) return m;
-    return '>' + maskText(inner) + '<';
-  }).replace(/(\w+)="([^"]+)"/g, (m, attr, val) => {
-    const SKIP_ATTRS = /^(type|status|role|code|version|lang|xmlns|encoding|format|level|action|id|class|name)$/i;
-    if (SKIP_ATTRS.test(attr)) return m;
-    if (shouldSkip(val)) return m;
-    return `${attr}="${maskText(val)}"`;
-  });
+  return text
+    .replace(/>([^<]+)</g, (m, inner) => {
+      if (/^\s*$/.test(inner) || shouldSkip(inner.trim())) return m;
+      return '>' + maskText(inner) + '<';
+    })
+    .replace(/(\w[\w:]*)\s*=\s*"([^"]+)"/g, (m, attr, val) => {
+      const SKIP = /^(type|status|role|code|version|lang|xmlns|encoding|format|level|action|id|class|name|xmlns:\w+)$/i;
+      if (SKIP.test(attr) || shouldSkip(val)) return m;
+      return `${attr}="${maskText(val)}"`;
+    });
 }
 
-// CSV: mask values, preserve header
+// CSV/TSV: mask values, keep header row intact
 function maskCSV(text, sep=',') {
-  const lines = text.split('\n');
-  const out = lines.map((line, idx) => {
-    if (idx === 0) return line; // header
-    const cells = line.split(sep);
-    return cells.map(cell => {
-      const trimmed = cell.trim().replace(/^["']|["']$/g, '');
-      if (!trimmed || shouldSkip(trimmed)) return cell;
-      const masked = maskText(trimmed);
-      return cell.replace(trimmed, masked);
+  return text.split('\n').map((line, idx) => {
+    if (idx === 0) return line;
+    return line.split(sep).map(cell => {
+      const v = cell.trim().replace(/^["']|["']$/g, '');
+      if (!v || shouldSkip(v)) return cell;
+      return cell.replace(v, maskText(v));
     }).join(sep);
-  });
-  return out.join('\n');
+  }).join('\n');
 }
 
-// YAML: mask values after `: `
+// YAML
 function maskYaml(text) {
   return text.replace(/^(\s*[\w\-]+:\s*)(.+)$/gm, (m, key, val) => {
-    const SKIP = /^(?:date|time|created|updated|status|type|version|level|code|enabled|disabled|true|false|null|\d{4}[-/]\d)/i;
-    if (SKIP.test(val.trim()) || shouldSkip(val.trim())) return m;
+    if (shouldSkip(val.trim())) return m;
     return key + maskText(val);
   });
 }
 
-// INI: mask values after `=`
+// INI
 function maskIni(text) {
   return text.replace(/^(\s*[\w\-]+\s*=\s*)(.+)$/gm, (m, key, val) => {
     if (shouldSkip(val.trim())) return m;
@@ -978,7 +886,7 @@ function maskIni(text) {
   });
 }
 
-// SQL: mask string literals in VALUES / SET
+// SQL string literals
 function maskSQL(text) {
   return text.replace(/'([^']+)'/g, (m, inner) => {
     if (shouldSkip(inner)) return m;
@@ -986,57 +894,46 @@ function maskSQL(text) {
   });
 }
 
-// ─── DOCX (ZIP-based XML) ─── //
-// Key fix: DOCX often splits a single word/phrase across multiple <w:t> tags
-// (because of formatting runs). We must collect all text in a paragraph,
-// mask the concatenated string, then put it back into the first <w:t> tag.
+// ─── DOCX ─── //
+// KEY FIX: collect ALL <w:t> text in a paragraph TOGETHER before masking.
+// Word splits runs on formatting boundaries — "Иванов " / "Иван" / " Иванович"
+// are three separate tags but one logical value.
 function maskDocxXml(xml) {
-  // Process each paragraph independently — collect all w:t text, mask together
-  return xml.replace(/<w:p[ >][\s\S]*?<\/w:p>/g, para => {
-    const SEG_RE = /(<w:t(?:\s[^>]*)?>)([^<]*)(<\/w:t>)/g;
-    const segments = [];
+  return xml.replace(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g, para => {
+    const SEG = /(<w:t(?:\s[^>]*)?>)([^<]*)(<\/w:t>)/g;
+    const segs = [];
     let m;
-    while ((m = SEG_RE.exec(para)) !== null) {
-      segments.push({ open: m[1], text: m[2], close: m[3], index: m.index, fullLen: m[0].length });
+    while ((m = SEG.exec(para)) !== null) {
+      segs.push({ open:m[1], text:m[2], close:m[3], idx:m.index, len:m[0].length });
     }
-    if (!segments.length) return para;
-
-    // Concatenate paragraph text and mask
-    const fullText = segments.map(s => s.text).join('');
-    if (!fullText.trim()) return para;
-    const masked = maskText(fullText);
-    if (masked === fullText) return para; // nothing changed
-
-    // Put masked text into first segment, clear the rest
+    if (!segs.length) return para;
+    const fullRaw = segs.map(s => s.text).join('');
+    if (!fullRaw.trim()) return para;
+    const full = decodeXmlEntities(fullRaw);
+    const masked = maskText(full);
+    if (masked === full) return para;
+    // Put all masked text into the FIRST segment, blank out the rest
     let result = para;
-    for (let i = segments.length - 1; i >= 0; i--) {
-      const s = segments[i];
-      const replacement = i === 0
-        ? s.open + masked + s.close
-        : s.open + s.close;
-      result = result.slice(0, s.index) + replacement + result.slice(s.index + s.fullLen);
+    for (let i = segs.length - 1; i >= 0; i--) {
+      const s = segs[i];
+      const rep = i === 0 ? s.open + masked + s.close : s.open + s.close;
+      result = result.slice(0, s.idx) + rep + result.slice(s.idx + s.len);
     }
     return result;
   });
 }
 
 async function maskDocx(file) {
-  const JSZip = await loadJSZip();
-  const ab = await readArrayBuffer(file);
-  const zip = await JSZip.loadAsync(ab);
-
-  // Collect all part names from zip to handle arbitrary header/footer numbers
-  const partsToProcess = Object.keys(zip.files).filter(name =>
-    name === 'word/document.xml' ||
-    /^word\/(header|footer|comments|footnotes|endnotes)\d*\.xml$/.test(name)
+  const Z = await loadJSZip();
+  const zip = await Z.loadAsync(await readArrayBuffer(file));
+  const parts = Object.keys(zip.files).filter(n =>
+    n === 'word/document.xml' ||
+    /^word\/(header|footer|comments|footnotes|endnotes)\d*\.xml$/.test(n)
   );
-
-  for (const part of partsToProcess) {
+  for (const part of parts) {
     let xml = await zip.files[part].async('string');
-    xml = maskDocxXml(xml);
-    zip.file(part, xml);
+    zip.file(part, maskDocxXml(xml));
   }
-
   if (SETTINGS.meta && zip.files['docProps/core.xml']) {
     let core = await zip.files['docProps/core.xml'].async('string');
     core = core
@@ -1045,59 +942,55 @@ async function maskDocx(file) {
       .replace(/<cp:lastModifiedBy>[^<]*<\/cp:lastModifiedBy>/g, '<cp:lastModifiedBy>MASKED</cp:lastModifiedBy>');
     zip.file('docProps/core.xml', core);
   }
-
-  const blob = await zip.generateAsync({type:'blob', compression:'DEFLATE'});
-  return blob;
+  return zip.generateAsync({type:'blob', compression:'DEFLATE'});
 }
 
-// ─── XLSX (ZIP-based XML) ─── //
+// ─── XLSX ─── //
+// Each <si> in sharedStrings may also split text across <t> tags.
 async function maskXlsx(file) {
-  const JSZip = await loadJSZip();
-  const ab = await readArrayBuffer(file);
-  const zip = await JSZip.loadAsync(ab);
+  const Z = await loadJSZip();
+  const zip = await Z.loadAsync(await readArrayBuffer(file));
 
-  // Shared strings — this is where most cell text lives in XLSX
-  // Each <si> contains one string; <t> may be split with xml:space="preserve"
   if (zip.files['xl/sharedStrings.xml']) {
     let xml = await zip.files['xl/sharedStrings.xml'].async('string');
-
-    // Process each <si> block: collect all <t> text, mask together, put back
     xml = xml.replace(/<si>[\s\S]*?<\/si>/g, si => {
-      const segments = [];
+      const segs = [];
       const RE = /(<t(?:\s[^>]*)?>)([^<]*)(<\/t>)/g;
       let m;
       while ((m = RE.exec(si)) !== null) {
-        segments.push({ open: m[1], text: m[2], close: m[3], index: m.index, fullLen: m[0].length });
+        segs.push({ open:m[1], text:m[2], close:m[3], idx:m.index, len:m[0].length });
       }
-      if (!segments.length) return si;
-      const fullText = segments.map(s => s.text).join('');
-      if (!fullText.trim() || shouldSkip(fullText.trim())) return si;
-      const masked = maskText(fullText);
-      if (masked === fullText) return si;
-      // Put masked text into first <t>, clear the rest
+      if (!segs.length) return si;
+      const fullRaw = segs.map(s => s.text).join('');
+      if (!fullRaw.trim()) return si;
+      const full = decodeXmlEntities(fullRaw);
+      if (shouldSkip(full.trim())) return si;
+      const masked = maskText(full);
+      if (masked === full) return si;
       let result = si;
-      for (let i = segments.length - 1; i >= 0; i--) {
-        const s = segments[i];
-        const repl = i === 0 ? s.open + masked + s.close : s.open + s.close;
-        result = result.slice(0, s.index) + repl + result.slice(s.index + s.fullLen);
+      for (let i = segs.length - 1; i >= 0; i--) {
+        const s = segs[i];
+        const rep = i === 0 ? s.open + masked + s.close : s.open + s.close;
+        result = result.slice(0, s.idx) + rep + result.slice(s.idx + s.len);
       }
       return result;
     });
-
     zip.file('xl/sharedStrings.xml', xml);
   }
 
-  // Inline strings in sheets (rare but possible)
-  const sheetFiles = Object.keys(zip.files).filter(f => /^xl\/worksheets\/sheet\d+\.xml$/.test(f));
-  for (const sf of sheetFiles) {
+  // Inline strings
+  const sheets = Object.keys(zip.files).filter(f => /^xl\/worksheets\/sheet\d+\.xml$/.test(f));
+  for (const sf of sheets) {
     let xml = await zip.files[sf].async('string');
-    // Inline string cells <c t="inlineStr"><is><t>...</t></is></c>
-    xml = xml.replace(/(<is>)([\s\S]*?)(<\/is>)/g, (m, open, inner, close) => {
-      const masked = inner.replace(/(<t(?:\s[^>]*)?>)([^<]*)(<\/t>)/g, (m2, o, text, c) => {
-        if (!text.trim() || shouldSkip(text.trim())) return m2;
-        return o + maskText(text) + c;
+    xml = xml.replace(/(<is>)([\s\S]*?)(<\/is>)/g, (m, o, inner, c) => {
+      const masked = inner.replace(/(<t(?:\s[^>]*)?>)([^<]*)(<\/t>)/g, (m2,a,text,b) => {
+        if (!text.trim()) return m2;
+        const decoded = decodeXmlEntities(text);
+        if (shouldSkip(decoded.trim())) return m2;
+        const mk = maskText(decoded);
+        return mk === decoded ? m2 : a + mk + b;
       });
-      return open + masked + close;
+      return o + masked + c;
     });
     zip.file(sf, xml);
   }
@@ -1109,56 +1002,41 @@ async function maskXlsx(file) {
       .replace(/<cp:lastModifiedBy>[^<]*<\/cp:lastModifiedBy>/g, '<cp:lastModifiedBy>MASKED</cp:lastModifiedBy>');
     zip.file('docProps/core.xml', core);
   }
-
-  const blob = await zip.generateAsync({type:'blob', compression:'DEFLATE'});
-  return blob;
+  return zip.generateAsync({type:'blob', compression:'DEFLATE'});
 }
 
 // ─── PDF ─── //
 async function maskPdf(file) {
-  // For PDF: we can only do text-level manipulation on uncompressed streams
-  // Real PDF masking requires PDF.js + canvas rerender — we do best-effort on raw bytes
   const ab = await readArrayBuffer(file);
   const bytes = new Uint8Array(ab);
-  const text = new TextDecoder('latin1').decode(bytes);
-
-  // Mask metadata in Info dictionary
-  let masked = text
+  let text = new TextDecoder('latin1').decode(bytes);
+  text = text
     .replace(/\/Author\s*\([^)]*\)/g, '/Author (MASKED)')
     .replace(/\/Creator\s*\([^)]*\)/g, '/Creator (MASKED)')
     .replace(/\/Producer\s*\([^)]*\)/g, '/Producer (MASKED)')
     .replace(/\/Title\s*\([^)]*\)/g, '/Title (MASKED)')
     .replace(/\/Subject\s*\([^)]*\)/g, '/Subject (MASKED)');
-
-  // Attempt plain text stream masking (only works on uncompressed PDFs)
-  masked = masked.replace(/BT([\s\S]*?)ET/g, (m, inner) => {
-    const maskedInner = inner.replace(/\(([^)]+)\)/g, (m2, content) => {
-      if (shouldSkip(content)) return m2;
-      const mk = maskText(content);
-      return `(${mk})`;
-    });
-    return 'BT' + maskedInner + 'ET';
+  text = text.replace(/BT([\s\S]*?)ET/g, (m, inner) => {
+    const mi = inner.replace(/\(([^)]+)\)/g, (m2, c) => shouldSkip(c) ? m2 : '(' + maskText(c) + ')');
+    return 'BT' + mi + 'ET';
   });
-
-  const encoded = new TextEncoder().encode(masked);
-  return new Blob([encoded], {type:'application/pdf'});
+  return new Blob([new TextEncoder().encode(text)], {type:'application/pdf'});
 }
 
-// ─── INLINE ZIP ENGINE (no CDN required) ─── //
-// Full ZIP read/write with DEFLATE via browser's CompressionStream API
+// ─── INLINE ZIP ENGINE ─── //
+// All signatures are compared in their correct byte-order.
+// readU32/readU16 use little-endian (ZIP spec for data fields).
+// Signature searches use big-endian reads to match the literal byte sequence.
 const InlineZip = (() => {
-  // ── Utilities ──
-  const u8 = (b) => new Uint8Array(b);
-  const view = (b) => new DataView(b instanceof ArrayBuffer ? b : b.buffer);
-  const str2u8 = (s) => new TextEncoder().encode(s);
-  const u8str = (u) => new TextDecoder('utf-8').decode(u);
+  const td = new TextDecoder('utf-8');
+  const te = new TextEncoder();
 
-  function readU16(dv, o) { return dv.getUint16(o, true); }
-  function readU32(dv, o) { return dv.getUint32(o, true); }
-  function writeU16(dv, o, v) { dv.setUint16(o, v, true); }
-  function writeU32(dv, o, v) { dv.setUint32(o, v, true); }
+  function rl16(dv, o) { return dv.getUint16(o, true); }
+  function rl32(dv, o) { return dv.getUint32(o, true); }
+  function wl16(dv, o, v) { dv.setUint16(o, v, true); }
+  function wl32(dv, o, v) { dv.setUint32(o, v, true); }
 
-  function concat(...arrays) {
+  function cat(...arrays) {
     const total = arrays.reduce((s, a) => s + a.length, 0);
     const out = new Uint8Array(total);
     let off = 0;
@@ -1166,8 +1044,8 @@ const InlineZip = (() => {
     return out;
   }
 
-  // ── CRC-32 ──
-  const CRC_TABLE = (() => {
+  // CRC-32
+  const CRC = (() => {
     const t = new Uint32Array(256);
     for (let n = 0; n < 256; n++) {
       let c = n;
@@ -1178,254 +1056,227 @@ const InlineZip = (() => {
   })();
   function crc32(buf, crc = 0) {
     crc ^= 0xFFFFFFFF;
-    for (let i = 0; i < buf.length; i++) crc = (crc >>> 8) ^ CRC_TABLE[(crc ^ buf[i]) & 0xFF];
+    for (let i = 0; i < buf.length; i++) crc = (crc >>> 8) ^ CRC[(crc ^ buf[i]) & 0xFF];
     return (crc ^ 0xFFFFFFFF) >>> 0;
   }
 
-  // ── Inflate (decompress) via DecompressionStream ──
+  // Decompress DEFLATE via browser DecompressionStream
   async function inflate(data) {
-    try {
-      // Add zlib header for raw deflate streams
-      const wrapped = concat(new Uint8Array([0x78, 0x9C]), data);
-      const ds = new DecompressionStream('deflate');
-      const writer = ds.writable.getWriter();
-      writer.write(wrapped);
-      writer.close();
-      const chunks = [];
-      const reader = ds.readable.getReader();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-      }
-      return concat(...chunks);
-    } catch(e) {
-      // Try raw deflate without header
+    const formats = ['deflate-raw', 'deflate'];
+    for (const fmt of formats) {
       try {
-        const ds2 = new DecompressionStream('raw-deflate');
-        const writer2 = ds2.writable.getWriter();
-        writer2.write(data);
-        writer2.close();
-        const chunks2 = [];
-        const reader2 = ds2.readable.getReader();
-        while (true) {
-          const { done, value } = await reader2.read();
-          if (done) break;
-          chunks2.push(value);
-        }
-        return concat(...chunks2);
-      } catch(e2) { throw new Error('inflate failed: ' + e2.message); }
+        const ds = new DecompressionStream(fmt);
+        const w = ds.writable.getWriter();
+        w.write(fmt === 'deflate' ? cat(new Uint8Array([0x78,0x9C]), data) : data);
+        w.close();
+        const chunks = [];
+        const r = ds.readable.getReader();
+        for (;;) { const {done,value} = await r.read(); if (done) break; chunks.push(value); }
+        return cat(...chunks);
+      } catch(e) { /* try next */ }
     }
+    // raw-deflate last resort (older browsers name it differently)
+    try {
+      const ds = new DecompressionStream('raw-deflate');
+      const w = ds.writable.getWriter(); w.write(data); w.close();
+      const chunks = []; const r = ds.readable.getReader();
+      for (;;) { const {done,value} = await r.read(); if (done) break; chunks.push(value); }
+      return cat(...chunks);
+    } catch(e) { throw new Error('inflate failed: '+e.message); }
   }
 
-  // ── Deflate (compress) via CompressionStream ──
+  // Compress via CompressionStream
   async function deflate(data) {
-    const cs = new CompressionStream('deflate');
-    const writer = cs.writable.getWriter();
-    writer.write(data);
-    writer.close();
-    const chunks = [];
-    const reader = cs.readable.getReader();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-    }
-    const compressed = concat(...chunks);
-    // Strip 2-byte zlib header and 4-byte adler checksum
-    return compressed.slice(2, compressed.length - 4);
+    const cs = new CompressionStream('deflate-raw');
+    const w = cs.writable.getWriter(); w.write(data); w.close();
+    const chunks = []; const r = cs.readable.getReader();
+    for (;;) { const {done,value} = await r.read(); if (done) break; chunks.push(value); }
+    return cat(...chunks);
   }
 
-  // ── Parse ZIP central directory ──
-  async function parse(arrayBuffer) {
-    const bytes = u8(arrayBuffer);
-    const dv = view(arrayBuffer);
+  // ── Parse ZIP ──
+  async function parseZip(ab) {
+    const bytes = new Uint8Array(ab);
+    const dv = new DataView(ab);
     const len = bytes.length;
 
-    // Find End of Central Directory record
-    let eocdOff = -1;
+    // Locate End of Central Directory (signature in big-endian: 0x504B0506)
+    let eocd = -1;
     for (let i = len - 22; i >= 0; i--) {
-      if (dv.getUint32(i, false) === 0x504B0506) { eocdOff = i; break; }
+      if (dv.getUint32(i, false) === 0x504B0506) { eocd = i; break; }
     }
-    if (eocdOff < 0) throw new Error('Not a valid ZIP file');
+    if (eocd < 0) throw new Error('Not a valid ZIP');
 
-    const cdOffset = readU32(dv, eocdOff + 16);
-    const cdSize   = readU32(dv, eocdOff + 12);
-    const entries  = {};
-    let p = cdOffset;
+    const cdOff  = rl32(dv, eocd + 16);
+    const cdSize = rl32(dv, eocd + 12);
+    const entries = {};
+    let p = cdOff;
 
-    while (p < cdOffset + cdSize) {
-      if (readU32(dv, p) !== 0x504B0102) break;
-      const method    = readU16(dv, p + 10);
-      const crc       = readU32(dv, p + 16);
-      const compSize  = readU32(dv, p + 20);
-      const uncompSize= readU32(dv, p + 24);
-      const fnLen     = readU16(dv, p + 28);
-      const extraLen  = readU16(dv, p + 30);
-      const cmtLen    = readU16(dv, p + 32);
-      const localOff  = readU32(dv, p + 42);
-      const name      = u8str(bytes.slice(p + 46, p + 46 + fnLen));
-      entries[name]   = { method, crc, compSize, uncompSize, localOff, name };
+    while (p < cdOff + cdSize) {
+      // Central directory signature in big-endian is 0x504B0102
+      // Reading big-endian here for signature check:
+      if (dv.getUint32(p, false) !== 0x504B0102) break;
+      const method     = rl16(dv, p + 10);
+      const compSize   = rl32(dv, p + 20);
+      const uncompSize = rl32(dv, p + 24);
+      const fnLen      = rl16(dv, p + 28);
+      const extraLen   = rl16(dv, p + 30);
+      const cmtLen     = rl16(dv, p + 32);
+      const localOff   = rl32(dv, p + 42);
+      const name       = td.decode(bytes.slice(p + 46, p + 46 + fnLen));
+      entries[name]    = { method, compSize, uncompSize, localOff, name };
       p += 46 + fnLen + extraLen + cmtLen;
     }
 
-    return { bytes, dv, entries };
+    return { bytes, ab, entries };
   }
 
-  // ── Read file from local header ──
-  async function readEntry(zipData, entry) {
-    const { bytes } = zipData;
-    const dv = view(bytes.buffer);
+  // ── Read entry data from local header ──
+  async function readEntry(zd, entry) {
+    const dv = new DataView(zd.ab);
     const lo = entry.localOff;
-    if (readU32(dv, lo) !== 0x504B0304) throw new Error('Bad local header for ' + entry.name);
-    const fnLen    = readU16(dv, lo + 26);
-    const extraLen = readU16(dv, lo + 28);
+    // Local file header sig in big-endian: 0x504B0304
+    if (dv.getUint32(lo, false) !== 0x504B0304) throw new Error('Bad local header: ' + entry.name);
+    const fnLen    = rl16(dv, lo + 26);
+    const extraLen = rl16(dv, lo + 28);
     const dataOff  = lo + 30 + fnLen + extraLen;
-    const comp     = bytes.slice(dataOff, dataOff + entry.compSize);
-    if (entry.method === 0) return comp; // stored
-    if (entry.method === 8) return inflate(comp); // deflated
-    throw new Error('Unsupported compression method ' + entry.method);
+    const comp     = zd.bytes.slice(dataOff, dataOff + entry.compSize);
+    if (entry.method === 0) return comp;           // STORE
+    if (entry.method === 8) return inflate(comp);  // DEFLATE
+    throw new Error('Unsupported compression method: ' + entry.method);
   }
 
   // ── ZipFile class ──
   class ZipFile {
-    constructor(zipData) {
-      this._zipData = zipData;
+    constructor(zd) {
+      this._zd = zd;
       this.files = {};
-      for (const [name, entry] of Object.entries(zipData.entries)) {
+      for (const [name, entry] of Object.entries(zd.entries)) {
+        const self = this;
         this.files[name] = {
           name,
           _entry: entry,
-          _zip: zipData,
           async async(type) {
-            const raw = await readEntry(zipData, entry);
-            if (type === 'string') return u8str(raw);
+            const raw = await readEntry(self._zd, entry);
+            if (type === 'string')     return td.decode(raw);
             if (type === 'uint8array') return raw;
-            if (type === 'arraybuffer') return raw.buffer;
-            return raw;
+            return raw.buffer;
           }
         };
       }
     }
 
     file(name, content) {
-      // Set/update a file
-      const data = typeof content === 'string' ? str2u8(content) : content;
+      const data = typeof content === 'string' ? te.encode(content) : content;
       this.files[name] = {
-        name,
-        _data: data,
-        _modified: true,
+        name, _data: data, _modified: true,
         async async(type) {
-          if (type === 'string') return u8str(data);
+          if (type === 'string')     return td.decode(data);
           if (type === 'uint8array') return data;
           return data.buffer;
         }
       };
     }
 
-    async generateAsync({ type = 'blob', compression = 'DEFLATE' } = {}) {
-      const parts = [];
-      const centralDir = [];
+    async generateAsync({ type = 'blob' } = {}) {
+      const localParts = [];
+      const cdParts    = [];
+      let   offset     = 0;
 
       for (const [name, file] of Object.entries(this.files)) {
-        if (name.endsWith('/')) continue; // skip directories
-        let rawData;
+        if (name.endsWith('/')) continue;
+
+        let raw;
         if (file._modified) {
-          rawData = file._data;
+          raw = file._data;
         } else {
-          rawData = await readEntry(this._zipData, file._entry);
+          raw = await readEntry(this._zd, file._entry);
         }
 
-        const nameBytes = str2u8(name);
-        const crc = crc32(rawData);
-        let compData;
-        let method;
+        const nameBytes  = te.encode(name);
+        const crc        = crc32(raw);
+        let   comp       = raw;
+        let   method     = 0;
 
-        // Use DEFLATE for text-like files, STORE for small/binary
-        const useDeflate = compression === 'DEFLATE' && rawData.length > 64;
-        if (useDeflate) {
-          compData = await deflate(rawData);
-          // If deflate doesn't help, store
-          if (compData.length >= rawData.length) { compData = rawData; method = 0; }
-          else method = 8;
-        } else {
-          compData = rawData;
-          method = 0;
+        if (raw.length > 64) {
+          try {
+            const c = await deflate(raw);
+            if (c.length < raw.length) { comp = c; method = 8; }
+          } catch(e) { /* keep stored */ }
         }
 
-        const localOff = parts.reduce((s, p) => s + p.length, 0);
-
-        // Local file header
+        // Local file header (30 + nameLen bytes)
         const lh = new Uint8Array(30 + nameBytes.length);
-        const lv = view(lh.buffer);
-        writeU32(lv, 0, 0x504B0304);
-        writeU16(lv, 4, 20);       // version needed
-        writeU16(lv, 6, 0);        // flags
-        writeU16(lv, 8, method);
-        writeU32(lv, 14, crc);
-        writeU32(lv, 18, compData.length);
-        writeU32(lv, 22, rawData.length);
-        writeU16(lv, 26, nameBytes.length);
-        writeU16(lv, 28, 0);
+        const lv = new DataView(lh.buffer);
+        wl32(lv,  0, 0x04034b50); // local sig  (LE)
+        wl16(lv,  4, 20);         // version needed
+        wl16(lv,  6, 0);          // flags
+        wl16(lv,  8, method);
+        wl16(lv, 10, 0);          // mod time
+        wl16(lv, 12, 0);          // mod date
+        wl32(lv, 14, crc);
+        wl32(lv, 18, comp.length);
+        wl32(lv, 22, raw.length);
+        wl16(lv, 26, nameBytes.length);
+        wl16(lv, 28, 0);          // extra len
         lh.set(nameBytes, 30);
 
-        parts.push(lh, compData);
-
-        // Central directory entry
+        // Central directory entry (46 + nameLen bytes)
         const cd = new Uint8Array(46 + nameBytes.length);
-        const cv = view(cd.buffer);
-        writeU32(cv, 0, 0x504B0102);
-        writeU16(cv, 4, 20);      // version made
-        writeU16(cv, 6, 20);      // version needed
-        writeU16(cv, 8, 0);       // flags
-        writeU16(cv, 10, method);
-        writeU32(cv, 16, crc);
-        writeU32(cv, 20, compData.length);
-        writeU32(cv, 24, rawData.length);
-        writeU16(cv, 28, nameBytes.length);
-        writeU16(cv, 30, 0);      // extra
-        writeU16(cv, 32, 0);      // comment
-        writeU16(cv, 34, 0);      // disk
-        writeU16(cv, 36, 0);      // int attrs
-        writeU32(cv, 38, 0);      // ext attrs
-        writeU32(cv, 42, localOff);
+        const cv = new DataView(cd.buffer);
+        wl32(cv,  0, 0x02014b50); // CD sig (LE)
+        wl16(cv,  4, 20);         // version made
+        wl16(cv,  6, 20);         // version needed
+        wl16(cv,  8, 0);
+        wl16(cv, 10, method);
+        wl16(cv, 12, 0);
+        wl16(cv, 14, 0);
+        wl32(cv, 16, crc);
+        wl32(cv, 20, comp.length);
+        wl32(cv, 24, raw.length);
+        wl16(cv, 28, nameBytes.length);
+        wl16(cv, 30, 0);
+        wl16(cv, 32, 0);
+        wl16(cv, 34, 0);
+        wl16(cv, 36, 0);
+        wl32(cv, 38, 0);
+        wl32(cv, 42, offset);
         cd.set(nameBytes, 46);
-        centralDir.push(cd);
+
+        localParts.push(lh, comp);
+        cdParts.push(cd);
+        offset += lh.length + comp.length;
       }
 
-      const cdBytes = concat(...centralDir);
-      const cdOffset = parts.reduce((s, p) => s + p.length, 0);
+      const cdBytes = cat(...cdParts);
+      const eocdBuf = new Uint8Array(22);
+      const ev      = new DataView(eocdBuf.buffer);
+      wl32(ev,  0, 0x06054b50); // EOCD sig (LE)
+      wl16(ev,  4, 0);
+      wl16(ev,  6, 0);
+      wl16(ev,  8, cdParts.length);
+      wl16(ev, 10, cdParts.length);
+      wl32(ev, 12, cdBytes.length);
+      wl32(ev, 16, offset);
+      wl16(ev, 20, 0);
 
-      // End of central directory
-      const eocd = new Uint8Array(22);
-      const ev = view(eocd.buffer);
-      writeU32(ev, 0, 0x504B0506);
-      writeU16(ev, 4, 0);
-      writeU16(ev, 6, 0);
-      writeU16(ev, 8, centralDir.length);
-      writeU16(ev, 10, centralDir.length);
-      writeU32(ev, 12, cdBytes.length);
-      writeU32(ev, 16, cdOffset);
-      writeU16(ev, 20, 0);
-
-      const final = concat(...parts, cdBytes, eocd);
+      const final = cat(...localParts, cdBytes, eocdBuf);
       if (type === 'blob') return new Blob([final], { type: 'application/zip' });
-      if (type === 'uint8array') return final;
-      return final.buffer;
+      return final;
     }
   }
 
   return {
-    loadAsync: async (arrayBuffer) => {
-      const zipData = await parse(arrayBuffer);
-      return new ZipFile(zipData);
+    loadAsync: async (ab) => {
+      const zd = await parseZip(ab);
+      return new ZipFile(zd);
     }
   };
 })();
-
 async function loadJSZip() {
   return InlineZip;
 }
+
 
 // ─── UI HELPERS ─── //
 function getActiveCategories() {
