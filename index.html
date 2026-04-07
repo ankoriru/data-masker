@@ -1,53 +1,1520 @@
-Задача
-Создай веб-приложение для маскирования чувствительных данных в корпоративных файлах.
-Технологии
-React + TypeScript + Vite
-Tailwind CSS + shadcn/ui
-Библиотеки: xlsx, jszip, pdf-lib
-Поддерживаемые форматы
-Логи: LOG, CSV, JSON, XML, TXT
-Системные: SAP Audit, Siebel Audit, Documentum Audit, Syslog, Apache/Nginx
-Документы: XLSX, DOCX, PDF
-Категории для маскирования (выбор через UI)
-Table
-Категория	Что скрывается	Пример
-Персональные данные	ФИО, email, телефоны	ivanov@mail.com → user_0001@company.com
-Коммерческая информация	Суммы, клиенты, контракты	1 000 000 ₽ → AMOUNT_0001
-Технические данные	IP, UUID, ID сессий	192.168.1.1 → 10.0.0.1
-Внутренняя информация	ID пользователей, документы	USER_001 → USER_0001
-Шаблоны систем
-SAP CRM — маскирует GUID, BNAME, KUNNR, TCODE
-Siebel CRM — маскирует Row ID, бизнес-объекты
-Documentum — маскирует Object ID, workflow
-Универсальные логи / Веб-сервер / База данных / Пользовательский
-UI структура
-Загрузка файла — drag & drop
-Вкладка "Шаблоны" — выбор системы
-Вкладка "Категории" — выбор что маскировать (4 карточки с чекбоксами)
-Вкладка "Детально" — расширенные настройки
-Результат — редактор с оригиналом/результатом + кнопка скачать
-Ключевые правила
-Для текста:
-Замена на читаемые значения (USER_0001, не XXX)
-Одинаковые значения → одинаковые маски в файле
-Даты, статусы, типы НЕ трогать
-Для DOCX:
-Распаковать ZIP → обработать XML → запаковать обратно
-Маскировать текст в <w:t> элементах
-Обработать document, headers, footers, comments
-Для XLSX:
-Читать через библиотеку xlsx
-Маскировать значения ячеек
-Сохранять форматирование
-Для PDF:
-Удалять метаданные (автор, заголовок)
-Сохранять оригинальное содержимое
-Тексты интерфейса
-Заголовок: "Маскирование документов и логов корпоративных систем"
-Подзаголовок: "Защита чувствительных данных"
-Кнопки: "Загрузите файл", "Обфусцировать", "Скачать документ"
-Важно
-Интерфейс на русском
-Все ресурсы в бандле (без внешних CDN)
-При ошибке обработки — возвращать оригинал
-Показывать toast-уведомления
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Маскирование документов — Защита данных</title>
+<style>
+  :root {
+    --bg:        #0a0c0f;
+    --bg2:       #111418;
+    --bg3:       #181c22;
+    --border:    #252a32;
+    --border2:   #2e3540;
+    --accent:    #00d4aa;
+    --accent2:   #0099ff;
+    --warn:      #ff6b35;
+    --danger:    #ff3b5c;
+    --text:      #e2e8f0;
+    --text2:     #94a3b8;
+    --text3:     #4a5568;
+    --mono:      'Cascadia Code', 'Fira Code', 'Consolas', 'Liberation Mono', monospace;
+    --sans:      'Segoe UI', 'Inter', system-ui, -apple-system, sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 14px; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,212,170,.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,170,.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ─── LAYOUT ─── */
+  .app { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; padding: 32px 20px 80px; }
+
+  /* ─── HEADER ─── */
+  header { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 40px; }
+  .header-icon {
+    width: 48px; height: 48px; flex-shrink: 0;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px;
+  }
+  .header-text h1 {
+    font-family: var(--mono);
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -.01em;
+    line-height: 1.3;
+  }
+  .header-text p {
+    font-size: .8rem;
+    color: var(--accent);
+    font-family: var(--mono);
+    margin-top: 2px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .badge {
+    margin-left: auto; display: flex; align-items: center; gap: 6px;
+    font-size: .7rem; font-family: var(--mono);
+    color: var(--text3); background: var(--bg3);
+    border: 1px solid var(--border); border-radius: 4px;
+    padding: 4px 10px; flex-shrink: 0;
+  }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.3} }
+
+  /* ─── COLUMNS ─── */
+  .columns { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media(max-width:720px){ .columns{ grid-template-columns:1fr; } }
+
+  /* ─── CARD ─── */
+  .card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .card-header {
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: .72rem;
+    color: var(--text2);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card-body { padding: 18px; }
+
+  /* ─── DROP ZONE ─── */
+  .drop-zone {
+    border: 2px dashed var(--border2);
+    border-radius: 8px;
+    padding: 40px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all .2s;
+    position: relative;
+    overflow: hidden;
+  }
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--accent);
+    background: rgba(0,212,170,.04);
+  }
+  .drop-zone input[type=file] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%;
+  }
+  .drop-icon { font-size: 32px; margin-bottom: 10px; }
+  .drop-title { font-size: .85rem; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+  .drop-sub { font-size: .75rem; color: var(--text2); }
+  .drop-formats { margin-top: 10px; font-size: .68rem; color: var(--text3); font-family: var(--mono); line-height: 1.6; }
+
+  .file-info {
+    display: none; margin-top: 14px;
+    background: var(--bg3); border: 1px solid var(--border2);
+    border-radius: 6px; padding: 10px 14px;
+    font-family: var(--mono); font-size: .75rem;
+  }
+  .file-info.show { display: flex; align-items: center; gap: 10px; }
+  .file-info-name { color: var(--accent); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-info-size { color: var(--text3); flex-shrink: 0; }
+  .file-remove { cursor: pointer; color: var(--danger); flex-shrink: 0; font-size: 1rem; line-height: 1; }
+  .file-remove:hover { opacity: .7; }
+
+  /* ─── TABS ─── */
+  .tab-nav { display: flex; gap: 2px; margin-bottom: 16px; background: var(--bg); border-radius: 6px; padding: 3px; border: 1px solid var(--border); }
+  .tab-btn {
+    flex: 1; padding: 7px 6px; border: none; border-radius: 4px;
+    background: transparent; color: var(--text2);
+    font-family: var(--sans); font-size: .75rem; font-weight: 500;
+    cursor: pointer; transition: all .15s; white-space: nowrap;
+  }
+  .tab-btn.active { background: var(--bg3); color: var(--text); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* ─── CHECKBOXES ─── */
+  .check-group { display: flex; flex-direction: column; gap: 10px; }
+  .check-item {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 10px 12px; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--bg);
+    cursor: pointer; transition: border-color .15s;
+  }
+  .check-item:hover { border-color: var(--border2); }
+  .check-item.active { border-color: var(--accent); background: rgba(0,212,170,.04); }
+  .check-item input { display: none; }
+  .check-box {
+    width: 16px; height: 16px; border-radius: 3px; flex-shrink: 0; margin-top: 1px;
+    border: 1.5px solid var(--border2); background: transparent;
+    display: flex; align-items: center; justify-content: center;
+    transition: all .15s;
+  }
+  .check-item.active .check-box { border-color: var(--accent); background: var(--accent); }
+  .check-box::after { content: '✓'; font-size: .65rem; color: #000; display: none; }
+  .check-item.active .check-box::after { display: block; }
+  .check-label { flex: 1; }
+  .check-title { font-size: .8rem; font-weight: 500; color: var(--text); }
+  .check-desc { font-size: .7rem; color: var(--text2); margin-top: 2px; line-height: 1.4; }
+  .check-tags { margin-top: 5px; display: flex; flex-wrap: wrap; gap: 3px; }
+  .tag {
+    font-family: var(--mono); font-size: .62rem;
+    padding: 1px 5px; border-radius: 3px;
+    background: var(--bg3); border: 1px solid var(--border); color: var(--text3);
+  }
+
+  /* ─── RADIO / TEMPLATE ─── */
+  .template-grid { display: flex; flex-direction: column; gap: 8px; }
+  .tpl-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--bg);
+    cursor: pointer; transition: border-color .15s;
+  }
+  .tpl-item:hover { border-color: var(--border2); }
+  .tpl-item.active { border-color: var(--accent2); background: rgba(0,153,255,.04); }
+  .tpl-radio {
+    width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
+    border: 1.5px solid var(--border2); background: transparent;
+    display: flex; align-items: center; justify-content: center;
+    transition: all .15s;
+  }
+  .tpl-item.active .tpl-radio { border-color: var(--accent2); }
+  .tpl-radio::after { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--accent2); display: none; }
+  .tpl-item.active .tpl-radio::after { display: block; }
+  .tpl-label { flex: 1; font-size: .8rem; font-weight: 500; }
+  .tpl-desc { font-size: .68rem; color: var(--text2); margin-top: 1px; }
+  .tpl-fields { margin-left: auto; font-family: var(--mono); font-size: .65rem; color: var(--text3); text-align: right; }
+
+  /* ─── ADVANCED ─── */
+  .adv-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .adv-label { font-size: .75rem; color: var(--text2); flex: 1; }
+  .adv-label small { display: block; font-size: .67rem; color: var(--text3); margin-top: 1px; }
+  .toggle {
+    position: relative; width: 36px; height: 20px;
+    background: var(--border2); border-radius: 10px;
+    cursor: pointer; transition: background .2s; flex-shrink: 0;
+  }
+  .toggle.on { background: var(--accent); }
+  .toggle::after {
+    content: ''; position: absolute;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: #fff; top: 3px; left: 3px; transition: left .2s;
+  }
+  .toggle.on::after { left: 19px; }
+
+  select, input[type=text] {
+    background: var(--bg); border: 1px solid var(--border2);
+    border-radius: 5px; color: var(--text);
+    font-family: var(--mono); font-size: .73rem; padding: 5px 8px;
+    outline: none;
+  }
+  select:focus, input[type=text]:focus { border-color: var(--accent); }
+  select option { background: var(--bg2); }
+
+  .pattern-input { width: 100%; margin-top: 4px; }
+  .pattern-row { margin-bottom: 12px; }
+  .pattern-row label { font-size: .72rem; color: var(--text2); display: block; margin-bottom: 3px; }
+
+  /* ─── ACTION BUTTON ─── */
+  .action-bar { margin-top: 20px; }
+  .btn-primary {
+    width: 100%; padding: 13px;
+    background: linear-gradient(135deg, var(--accent), #00b896);
+    border: none; border-radius: 8px;
+    color: #000; font-family: var(--mono); font-weight: 700;
+    font-size: .85rem; letter-spacing: .05em;
+    cursor: pointer; transition: opacity .2s, transform .1s;
+    position: relative; overflow: hidden;
+  }
+  .btn-primary:hover { opacity: .9; }
+  .btn-primary:active { transform: scale(.99); }
+  .btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-primary .spinner {
+    display: none; width: 16px; height: 16px;
+    border: 2px solid rgba(0,0,0,.3); border-top-color: #000;
+    border-radius: 50%; animation: spin .6s linear infinite;
+    position: absolute; right: 16px; top: 50%; margin-top: -8px;
+  }
+  .btn-primary.loading .spinner { display: block; }
+  @keyframes spin { to{ transform: rotate(360deg); } }
+
+  /* ─── RESULT ─── */
+  .result-card {
+    margin-top: 24px;
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 10px; overflow: hidden;
+    display: none;
+  }
+  .result-card.show { display: block; }
+  .result-header {
+    padding: 12px 18px; border-bottom: 1px solid var(--border);
+    font-family: var(--mono); font-size: .72rem;
+    color: var(--accent); letter-spacing: .1em; text-transform: uppercase;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .result-body { padding: 18px; }
+  .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px; }
+  .stat-box {
+    background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 6px; padding: 12px;
+    text-align: center;
+  }
+  .stat-val { font-family: var(--mono); font-size: 1.4rem; font-weight: 700; color: var(--accent); }
+  .stat-lbl { font-size: .67rem; color: var(--text3); margin-top: 2px; text-transform: uppercase; letter-spacing: .06em; }
+
+  .changes-list {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 12px;
+    max-height: 200px; overflow-y: auto;
+    font-family: var(--mono); font-size: .72rem;
+    margin-bottom: 16px;
+  }
+  .changes-list::-webkit-scrollbar { width: 4px; }
+  .changes-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+  .change-line { padding: 3px 0; border-bottom: 1px solid var(--border); display: flex; gap: 8px; }
+  .change-line:last-child { border-bottom: none; }
+  .change-orig { color: var(--danger); text-decoration: line-through; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
+  .change-arrow { color: var(--text3); }
+  .change-mask { color: var(--accent); }
+  .change-cat { color: var(--text3); margin-left: auto; }
+
+  .btn-download {
+    width: 100%; padding: 12px;
+    background: transparent; border: 1px solid var(--accent2);
+    border-radius: 8px; color: var(--accent2);
+    font-family: var(--mono); font-weight: 600; font-size: .82rem;
+    cursor: pointer; transition: all .2s; letter-spacing: .05em;
+  }
+  .btn-download:hover { background: rgba(0,153,255,.1); }
+
+  /* ─── TOAST ─── */
+  #toast-container {
+    position: fixed; bottom: 24px; right: 24px;
+    z-index: 1000; display: flex; flex-direction: column; gap: 8px;
+    pointer-events: none;
+  }
+  .toast {
+    pointer-events: auto;
+    min-width: 260px; max-width: 380px;
+    background: var(--bg3); border: 1px solid var(--border2);
+    border-radius: 8px; padding: 12px 16px;
+    font-size: .78rem; display: flex; align-items: flex-start; gap: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.4);
+    animation: slideIn .25s ease;
+  }
+  @keyframes slideIn { from{transform:translateX(40px);opacity:0} to{transform:translateX(0);opacity:1} }
+  .toast.success { border-left: 3px solid var(--accent); }
+  .toast.error   { border-left: 3px solid var(--danger); }
+  .toast.warn    { border-left: 3px solid var(--warn); }
+  .toast-icon { font-size: 1rem; flex-shrink: 0; }
+  .toast-text { flex: 1; line-height: 1.4; }
+  .toast-close { cursor: pointer; color: var(--text3); font-size: 1rem; line-height: 1; margin-left: auto; }
+  .toast-close:hover { color: var(--text); }
+
+  .section-title { font-size: .7rem; font-family: var(--mono); color: var(--text3); letter-spacing: .1em; text-transform: uppercase; margin-bottom: 10px; }
+  .divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+  .full-col { grid-column: 1/-1; }
+</style>
+</head>
+<body>
+
+<div id="toast-container"></div>
+
+<div class="app">
+  <!-- HEADER -->
+  <header>
+    <div class="header-icon">🛡️</div>
+    <div class="header-text">
+      <h1>Маскирование документов и лог файлов<br>корпоративных систем</h1>
+      <p>Защита чувствительных данных</p>
+    </div>
+    <div class="badge"><span class="dot"></span>v2.1 offline</div>
+  </header>
+
+  <div class="columns">
+    <!-- LEFT COLUMN -->
+    <div>
+      <!-- DROP ZONE -->
+      <div class="card" style="margin-bottom:20px">
+        <div class="card-header">📁 Загрузка файла</div>
+        <div class="card-body">
+          <div class="drop-zone" id="dropZone">
+            <input type="file" id="fileInput" accept="*"/>
+            <div class="drop-icon">⬆️</div>
+            <div class="drop-title">Загрузите файл</div>
+            <div class="drop-sub">Перетащите или нажмите для выбора</div>
+            <div class="drop-formats">LOG · CSV · JSON · XML · TXT · XLSX · DOCX · PDF<br>SAP Audit · Siebel · Documentum · Syslog · Apache · Nginx · INI · YAML · SQL · TSV</div>
+          </div>
+          <div class="file-info" id="fileInfo">
+            <span>📄</span>
+            <span class="file-info-name" id="fileName">—</span>
+            <span class="file-info-size" id="fileSize">—</span>
+            <span class="file-remove" id="fileRemove" title="Удалить">✕</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- TABS: Templates / Categories / Advanced -->
+      <div class="card">
+        <div class="card-body">
+          <div class="tab-nav">
+            <button class="tab-btn active" data-tab="templates">Шаблоны</button>
+            <button class="tab-btn" data-tab="categories">Категории</button>
+            <button class="tab-btn" data-tab="advanced">Детально</button>
+          </div>
+
+          <!-- TAB: TEMPLATES -->
+          <div class="tab-panel active" id="tab-templates">
+            <div class="section-title">Система-источник</div>
+            <div class="template-grid">
+              <label class="tpl-item active" data-tpl="universal">
+                <input type="radio" name="template" value="universal" checked/>
+                <div class="tpl-radio"></div>
+                <div>
+                  <div class="tpl-label">Универсальный</div>
+                  <div class="tpl-desc">Email, телефоны, ФИО, IP, паспорта, ИНН/ОГРН</div>
+                </div>
+                <div class="tpl-fields">25+ правил</div>
+              </label>
+              <label class="tpl-item" data-tpl="sap">
+                <input type="radio" name="template" value="sap"/>
+                <div class="tpl-radio"></div>
+                <div>
+                  <div class="tpl-label">SAP CRM / ERP</div>
+                  <div class="tpl-desc">GUID, BNAME, KUNNR, TCODE, MANDT</div>
+                </div>
+                <div class="tpl-fields">GUID · BNAME · KUNNR</div>
+              </label>
+              <label class="tpl-item" data-tpl="siebel">
+                <input type="radio" name="template" value="siebel"/>
+                <div class="tpl-radio"></div>
+                <div>
+                  <div class="tpl-label">Siebel CRM</div>
+                  <div class="tpl-desc">Row ID, бизнес-объекты, workflow</div>
+                </div>
+                <div class="tpl-fields">ROW_ID · BusObj</div>
+              </label>
+              <label class="tpl-item" data-tpl="documentum">
+                <input type="radio" name="template" value="documentum"/>
+                <div class="tpl-radio"></div>
+                <div>
+                  <div class="tpl-label">Documentum ECM</div>
+                  <div class="tpl-desc">Object ID, r_object_id, workflow activity</div>
+                </div>
+                <div class="tpl-fields">r_object_id · workflow</div>
+              </label>
+              <label class="tpl-item" data-tpl="webserver">
+                <input type="radio" name="template" value="webserver"/>
+                <div class="tpl-radio"></div>
+                <div>
+                  <div class="tpl-label">Веб-сервер (Apache / Nginx)</div>
+                  <div class="tpl-desc">IP-адреса, User-Agent, URL-пути, cookie</div>
+                </div>
+                <div class="tpl-fields">access.log · error.log</div>
+              </label>
+              <label class="tpl-item" data-tpl="db">
+                <input type="radio" name="template" value="db"/>
+                <div class="tpl-radio"></div>
+                <div>
+                  <div class="tpl-label">База данных / SQL</div>
+                  <div class="tpl-desc">Connection strings, credentials, schema names</div>
+                </div>
+                <div class="tpl-fields">DSN · PWD · UID</div>
+              </label>
+              <label class="tpl-item" data-tpl="custom">
+                <input type="radio" name="template" value="custom"/>
+                <div class="tpl-radio"></div>
+                <div>
+                  <div class="tpl-label">Пользовательский</div>
+                  <div class="tpl-desc">Настройте свои регулярные выражения на вкладке «Детально»</div>
+                </div>
+                <div class="tpl-fields">regex</div>
+              </label>
+            </div>
+          </div>
+
+          <!-- TAB: CATEGORIES -->
+          <div class="tab-panel" id="tab-categories">
+            <div class="section-title">Что маскировать</div>
+            <div class="check-group">
+              <label class="check-item active" data-cat="personal">
+                <input type="checkbox" checked/>
+                <div class="check-box"></div>
+                <div class="check-label">
+                  <div class="check-title">Персональные данные (ПДн)</div>
+                  <div class="check-desc">ФИО, email, телефон, паспорт, СНИЛС, ИНН физ. лица, дата рождения, адрес</div>
+                  <div class="check-tags">
+                    <span class="tag">EMAIL</span><span class="tag">PHONE</span><span class="tag">FULL_NAME</span>
+                    <span class="tag">PASSPORT</span><span class="tag">SNILS</span><span class="tag">ADDRESS</span>
+                  </div>
+                </div>
+              </label>
+              <label class="check-item active" data-cat="commercial">
+                <input type="checkbox" checked/>
+                <div class="check-box"></div>
+                <div class="check-label">
+                  <div class="check-title">Коммерческая информация</div>
+                  <div class="check-desc">ИНН/ОГРН организации, банковские реквизиты, суммы транзакций, наименования контрагентов</div>
+                  <div class="check-tags">
+                    <span class="tag">INN_ORG</span><span class="tag">OGRN</span><span class="tag">BIC</span>
+                    <span class="tag">ACCOUNT</span><span class="tag">AMOUNT</span>
+                  </div>
+                </div>
+              </label>
+              <label class="check-item active" data-cat="technical">
+                <input type="checkbox" checked/>
+                <div class="check-box"></div>
+                <div class="check-label">
+                  <div class="check-title">Технические данные</div>
+                  <div class="check-desc">IP-адреса, MAC, hostname, пароли, API ключи, токены, connection string</div>
+                  <div class="check-tags">
+                    <span class="tag">IP</span><span class="tag">MAC</span><span class="tag">PASSWORD</span>
+                    <span class="tag">API_KEY</span><span class="tag">TOKEN</span><span class="tag">HOST</span>
+                  </div>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- TAB: ADVANCED -->
+          <div class="tab-panel" id="tab-advanced">
+            <div class="section-title">Параметры обработки</div>
+            <div class="adv-row">
+              <div class="adv-label">
+                Консистентные маски
+                <small>Одно значение → одна маска во всём файле</small>
+              </div>
+              <div class="toggle on" id="tgl-consistent" data-key="consistent"></div>
+            </div>
+            <div class="adv-row">
+              <div class="adv-label">
+                Читаемые метки (USER_0001 вместо XXXX)
+                <small>Маски содержат категорию и порядковый номер</small>
+              </div>
+              <div class="toggle on" id="tgl-readable" data-key="readable"></div>
+            </div>
+            <div class="adv-row">
+              <div class="adv-label">
+                Сохранять даты и статусы без изменений
+                <small>Поля типа created_at, status, type не затрагиваются</small>
+              </div>
+              <div class="toggle on" id="tgl-dates" data-key="dates"></div>
+            </div>
+            <div class="adv-row">
+              <div class="adv-label">
+                Очищать метаданные файла
+                <small>Автор, организация в DOCX/PDF/XLSX</small>
+              </div>
+              <div class="toggle on" id="tgl-meta" data-key="meta"></div>
+            </div>
+            <div class="adv-row">
+              <div class="adv-label">
+                Журнал замен
+                <small>Показывать список что→что изменено</small>
+              </div>
+              <div class="toggle on" id="tgl-log" data-key="log"></div>
+            </div>
+            <hr class="divider"/>
+            <div class="section-title">Пользовательские паттерны</div>
+            <div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:12px;font-size:.72rem;line-height:1.7;color:var(--text2);">
+              Работает только при шаблоне <span style="color:var(--accent);font-family:var(--mono)">Пользовательский</span> или дополняет любой шаблон.<br>
+              Каждое правило — пара <strong style="color:var(--text)">Regex → Метка</strong>. Совпадение будет заменено на <span style="color:var(--accent);font-family:var(--mono)">МЕТКА_0001</span>, <span style="color:var(--accent);font-family:var(--mono)">МЕТКА_0002</span> и т.д.<br><br>
+              <span style="color:var(--text3)">Примеры паттернов:</span><br>
+              <span style="font-family:var(--mono);color:var(--accent2)">\bCONTRACT-\d+\b</span> — номера договоров CONTRACT-12345<br>
+              <span style="font-family:var(--mono);color:var(--accent2)">\bMY_ID_\d{6}\b</span> — внутренние ID MY_ID_000123<br>
+              <span style="font-family:var(--mono);color:var(--accent2)">[A-Z]{2}\d{6}</span> — коды формата AB123456<br>
+              <span style="font-family:var(--mono);color:var(--accent2)">(?i)(?:server|host)=\S+</span> — hostname в конфигах
+            </div>
+
+            <div id="regexRules" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px;"></div>
+            <button id="btnAddRule" style="width:100%;padding:7px;background:transparent;border:1px dashed var(--border2);border-radius:6px;color:var(--text3);font-family:var(--mono);font-size:.72rem;cursor:pointer;transition:all .15s;"
+              onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'"
+              onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--text3)'">
+              + Добавить паттерн
+            </button>
+            <!-- Hidden textarea keeps compatibility with maskText() -->
+            <textarea id="customRegex" style="display:none"></textarea>
+            <input type="text" id="customPrefix" style="display:none" value="CUSTOM"/>
+          </div>
+        </div>
+      </div>
+
+      <!-- ACTION -->
+      <div class="action-bar">
+        <button class="btn-primary" id="btnProcess">
+          ⚙️ Обфусцировать
+          <div class="spinner"></div>
+        </button>
+      </div>
+    </div>
+
+    <!-- RIGHT COLUMN: RESULT -->
+    <div>
+      <div class="card" style="min-height:200px">
+        <div class="card-header">📊 Статус</div>
+        <div class="card-body" id="statusArea" style="color:var(--text3);font-size:.8rem;line-height:1.6;">
+          Загрузите файл и настройте параметры маскирования.<br><br>
+          Поддерживаемые форматы: LOG, CSV, JSON, XML, TXT, XLSX, DOCX, PDF, SAP Audit, Siebel, Documentum, Syslog, Apache/Nginx, SQL, YAML, INI, TSV и другие текстовые форматы.
+        </div>
+      </div>
+
+      <div class="result-card" id="resultCard">
+        <div class="result-header">✅ Результат маскирования</div>
+        <div class="result-body">
+          <div class="stat-grid">
+            <div class="stat-box"><div class="stat-val" id="statTotal">0</div><div class="stat-lbl">Замен</div></div>
+            <div class="stat-box"><div class="stat-val" id="statUniq">0</div><div class="stat-lbl">Уникальных</div></div>
+            <div class="stat-box"><div class="stat-val" id="statCats">0</div><div class="stat-lbl">Категорий</div></div>
+          </div>
+          <div class="section-title">Журнал замен</div>
+          <div class="changes-list" id="changesList"></div>
+          <button class="btn-download" id="btnDownload">⬇ Скачать документ</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── MASKING ENGINE ─── //
+
+const SETTINGS = { consistent:true, readable:true, dates:true, meta:true, log:true };
+let currentFile = null;
+let processedBlob = null;
+let changeLog = [];
+
+// ─── PATTERN LIBRARY ─── //
+const PATTERNS = {
+  // Personal
+  EMAIL:      { re: /\b[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}\b/g, cat:'personal', prefix:'EMAIL' },
+  PHONE:      { re: /(?:\+7|8)?[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}/g, cat:'personal', prefix:'PHONE' },
+  FULL_NAME:  { re: /\b[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+(?:ич|овна|евна|инична)?\b/g, cat:'personal', prefix:'NAME' },
+  PASSPORT:   { re: /\b\d{4}\s?\d{6}\b/g, cat:'personal', prefix:'PASP' },
+  SNILS:      { re: /\b\d{3}-\d{3}-\d{3}\s?\d{2}\b/g, cat:'personal', prefix:'SNILS' },
+  INN_PERS:   { re: /\bИНН[:\s]*\d{12}\b/gi, cat:'personal', prefix:'INN_P' },
+  ADDRESS:    { re: /(?:г\.|ул\.|пр\.|пер\.)[\s\w.,]+\d+[а-яА-Я]?(?:\/\d+)?/g, cat:'personal', prefix:'ADDR' },
+  // Commercial
+  INN_ORG:    { re: /\b\d{10}\b(?=\D)/g, cat:'commercial', prefix:'INN' },
+  OGRN:       { re: /\b1\d{12}\b|\b[35]\d{14}\b/g, cat:'commercial', prefix:'OGRN' },
+  BIC:        { re: /\b0\d{8}\b/g, cat:'commercial', prefix:'BIC' },
+  ACCOUNT:    { re: /\b\d{20}\b/g, cat:'commercial', prefix:'ACC' },
+  // Technical
+  IPv4:       { re: /\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b/g, cat:'technical', prefix:'IP' },
+  IPv6:       { re: /\b(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b/g, cat:'technical', prefix:'IPV6' },
+  MAC:        { re: /\b([0-9a-fA-F]{2}[:\-]){5}[0-9a-fA-F]{2}\b/g, cat:'technical', prefix:'MAC' },
+  API_KEY:    { re: /(?:api[_\-]?key|apikey|access[_\-]?token|bearer)\s*[=:]\s*["']?[A-Za-z0-9\-_.~+/]{20,}["']?/gi, cat:'technical', prefix:'APIKEY' },
+  PASSWORD:   { re: /(?:password|passwd|pwd|secret|credentials?)\s*[=:]\s*["']?[^\s"',;]{4,}["']?/gi, cat:'technical', prefix:'PWD' },
+  CONN_STR:   { re: /(?:Server|Data Source|Host)\s*=\s*[^;,"'\s]+/gi, cat:'technical', prefix:'HOST' },
+  TOKEN_JWT:  { re: /eyJ[A-Za-z0-9\-_]+\.eyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_.+/]*/g, cat:'technical', prefix:'JWT' },
+  // SAP
+  SAP_GUID:   { re: /\b[0-9A-F]{8}[0-9A-F]{4}[0-9A-F]{4}[0-9A-F]{4}[0-9A-F]{12}\b/g, cat:'sap', prefix:'GUID' },
+  SAP_BNAME:  { re: /BNAME\s*=\s*["']?[\w.@\-]{3,}["']?/gi, cat:'sap', prefix:'BNAME' },
+  SAP_KUNNR:  { re: /KUNNR\s*=\s*["']?\d{6,10}["']?/gi, cat:'sap', prefix:'KUNNR' },
+  SAP_TCODE:  { re: /TCODE\s*=\s*["']?\w{2,6}["']?/gi, cat:'sap', prefix:'TCODE' },
+  SAP_MANDT:  { re: /MANDT\s*=\s*["']?\d{3}["']?/gi, cat:'sap', prefix:'MANDT' },
+  // Siebel
+  SBL_ROWID:  { re: /ROW_ID\s*=\s*["']?[\w\-]{15,}["']?/gi, cat:'siebel', prefix:'ROWID' },
+  SBL_BUSOBJ: { re: /BusObject\s*=\s*["']?[\w\s]{3,}["']?/gi, cat:'siebel', prefix:'BUSOBJ' },
+  // Documentum
+  DCT_OBJID:  { re: /r_object_id\s*=\s*["']?[0-9a-f]{16}["']?/gi, cat:'documentum', prefix:'OBJID' },
+  DCT_WF:     { re: /workflow[_\-]?id\s*=\s*["']?[\w\-]{8,}["']?/gi, cat:'documentum', prefix:'WFID' },
+  // Web server
+  WEB_UA:     { re: /(?:User-Agent|useragent):\s*.+/gi, cat:'webserver', prefix:'UA' },
+  WEB_COOKIE: { re: /Cookie:\s*.+/gi, cat:'webserver', prefix:'COOKIE' },
+  WEB_REFERER:{ re: /Referer:\s*https?:\/\/[^\s]+/gi, cat:'webserver', prefix:'REFERER' },
+  // DB
+  DB_PWD:     { re: /Password\s*=\s*[^;,"'\s]+/gi, cat:'db', prefix:'DBPWD' },
+  DB_UID:     { re: /(?:User\s*Id|UID)\s*=\s*[^;,"'\s]+/gi, cat:'db', prefix:'DBUID' },
+};
+
+// Date/status patterns — DO NOT mask
+const SKIP_RE = [
+  /\b\d{4}[-/.]\d{2}[-/.]\d{2}(?:T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})?)?\b/,
+  /\b\d{2}[-/.]\d{2}[-/.]\d{4}\b/,
+  /\b(?:status|state|type|role|level|code|flag|action|mode|priority|severity)\s*[:=]\s*\w+/i,
+  /\b(?:DEBUG|INFO|WARN|WARNING|ERROR|FATAL|NOTICE|CRITICAL|TRACE)\b/,
+  /\b(?:true|false|null|none|undefined|yes|no)\b/i,
+];
+
+function shouldSkip(val) {
+  if (!SETTINGS.dates) return false;
+  return SKIP_RE.some(r => r.test(val));
+}
+
+// Masking state
+const maskMaps = {}; // { prefix: { original: 'PREFIX_0001', ... } }
+const counters  = {};
+
+function getMask(original, prefix, cat) {
+  if (!maskMaps[prefix]) maskMaps[prefix] = {};
+  if (!counters[prefix]) counters[prefix] = 0;
+  if (SETTINGS.consistent && maskMaps[prefix][original]) return maskMaps[prefix][original];
+  counters[prefix]++;
+  const mask = SETTINGS.readable
+    ? `${prefix}_${String(counters[prefix]).padStart(4,'0')}`
+    : `${prefix}_${Math.random().toString(36).substr(2,8).toUpperCase()}`;
+  maskMaps[prefix][original] = mask;
+  changeLog.push({ original, mask, cat });
+  return mask;
+}
+
+function resetMasker() {
+  Object.keys(maskMaps).forEach(k => delete maskMaps[k]);
+  Object.keys(counters).forEach(k => delete counters[k]);
+  changeLog = [];
+}
+
+function getActivePatterns() {
+  const cats = getActiveCategories();
+  const tpl   = getActiveTemplate();
+  const result = {};
+
+  // Map categories to pattern keys
+  const catMap = {
+    personal:    ['EMAIL','PHONE','FULL_NAME','PASSPORT','SNILS','INN_PERS','ADDRESS'],
+    commercial:  ['INN_ORG','OGRN','BIC','ACCOUNT'],
+    technical:   ['IPv4','IPv6','MAC','API_KEY','PASSWORD','CONN_STR','TOKEN_JWT'],
+  };
+  const tplMap = {
+    sap:        ['SAP_GUID','SAP_BNAME','SAP_KUNNR','SAP_TCODE','SAP_MANDT'],
+    siebel:     ['SBL_ROWID','SBL_BUSOBJ'],
+    documentum: ['DCT_OBJID','DCT_WF'],
+    webserver:  ['WEB_UA','WEB_COOKIE','WEB_REFERER','IPv4','IPv6'],
+    db:         ['DB_PWD','DB_UID','CONN_STR'],
+    universal:  ['EMAIL','PHONE','FULL_NAME','PASSPORT','SNILS','INN_PERS','ADDRESS','IPv4','IPv6'],
+  };
+
+  cats.forEach(c => { (catMap[c]||[]).forEach(k => result[k] = PATTERNS[k]); });
+  (tplMap[tpl]||[]).forEach(k => { if(PATTERNS[k]) result[k] = PATTERNS[k]; });
+
+  return result;
+}
+
+function maskText(text) {
+  const patterns = getActivePatterns();
+  let result = text;
+
+  // Reset regex lastIndex
+  Object.values(patterns).forEach(p => { if(p) p.re.lastIndex = 0; });
+
+  // Custom patterns — read from rule editor (format: pattern|||PREFIX per line)
+  const customRaw = document.getElementById('customRegex').value.trim();
+  const customPatterns = [];
+  if (customRaw) {
+    customRaw.split('\n').filter(Boolean).forEach(line => {
+      const [pat, pfx] = line.split('|||');
+      const prefix = (pfx || 'CUSTOM').trim().toUpperCase();
+      try { customPatterns.push({ re: new RegExp(pat.trim(), 'g'), prefix, cat:'custom' }); } catch(e){}
+    });
+  }
+
+  const allPatterns = [
+    ...Object.values(patterns).filter(Boolean),
+    ...customPatterns,
+  ];
+
+  // Collect all matches with positions
+  const matches = [];
+  allPatterns.forEach(p => {
+    p.re.lastIndex = 0;
+    let m;
+    while ((m = p.re.exec(result)) !== null) {
+      if (!shouldSkip(m[0])) {
+        matches.push({ start: m.index, end: m.index + m[0].length, original: m[0], prefix: p.prefix, cat: p.cat });
+      }
+      p.re.lastIndex = m.index + 1;
+    }
+  });
+
+  // Sort by position, deduplicate overlaps
+  matches.sort((a,b) => a.start - b.start);
+  const kept = [];
+  let lastEnd = 0;
+  matches.forEach(m => { if (m.start >= lastEnd) { kept.push(m); lastEnd = m.end; } });
+
+  // Replace from end to start
+  kept.reverse().forEach(m => {
+    const mask = getMask(m.original, m.prefix, m.cat);
+    result = result.slice(0, m.start) + mask + result.slice(m.end);
+  });
+
+  return result;
+}
+
+// ─── FILE PROCESSING ─── //
+
+async function processFile(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  const BINARY_EXTS = ['xlsx','docx','pdf','xls','doc'];
+
+  if (ext === 'json') {
+    const text = await readText(file);
+    try {
+      const obj = JSON.parse(text);
+      const masked = maskJSON(obj);
+      return new Blob([JSON.stringify(masked, null, 2)], {type:'application/json'});
+    } catch(e) {
+      return new Blob([maskText(text)], {type:'text/plain'});
+    }
+  }
+
+  if (ext === 'xml') {
+    const text = await readText(file);
+    return new Blob([maskXML(text)], {type:'application/xml'});
+  }
+
+  if (ext === 'csv' || ext === 'tsv') {
+    const text = await readText(file);
+    return new Blob([maskCSV(text, ext==='tsv'?'\t':',')], {type:'text/plain'});
+  }
+
+  if (ext === 'docx') return await maskDocx(file);
+  if (ext === 'xlsx' || ext === 'xls') return await maskXlsx(file);
+  if (ext === 'pdf') return await maskPdf(file);
+
+  if (ext === 'yaml' || ext === 'yml') {
+    const text = await readText(file);
+    return new Blob([maskYaml(text)], {type:'text/plain'});
+  }
+
+  if (ext === 'ini' || ext === 'cfg' || ext === 'conf') {
+    const text = await readText(file);
+    return new Blob([maskIni(text)], {type:'text/plain'});
+  }
+
+  if (ext === 'sql') {
+    const text = await readText(file);
+    return new Blob([maskSQL(text)], {type:'text/plain'});
+  }
+
+  // fallback: plain text (LOG, TXT, Syslog, Apache, Nginx, etc.)
+  const text = await readText(file);
+  return new Blob([maskText(text)], {type:'text/plain'});
+}
+
+function readText(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = e => res(e.target.result);
+    r.onerror = () => rej(new Error('Ошибка чтения файла'));
+    r.readAsText(file, 'UTF-8');
+  });
+}
+
+function readArrayBuffer(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = e => res(e.target.result);
+    r.onerror = () => rej(new Error('Ошибка чтения файла'));
+    r.readAsArrayBuffer(file);
+  });
+}
+
+// JSON: recurse, mask string values
+function maskJSON(obj, depth=0) {
+  if (depth > 50) return obj;
+  if (typeof obj === 'string') {
+    return shouldSkip(obj) ? obj : maskText(obj);
+  }
+  if (Array.isArray(obj)) return obj.map(v => maskJSON(v, depth+1));
+  if (obj !== null && typeof obj === 'object') {
+    const SKIP_KEYS = /^(date|time|created|updated|modified|timestamp|status|type|role|level|code|flag|action|version|id$|_id$)/i;
+    const out = {};
+    for (const [k,v] of Object.entries(obj)) {
+      out[k] = SKIP_KEYS.test(k) ? v : maskJSON(v, depth+1);
+    }
+    return out;
+  }
+  return obj;
+}
+
+// XML: mask text nodes, skip attributes like type, status
+function maskXML(text) {
+  // Mask text content between tags (not attribute values for type/status)
+  return text.replace(/>([^<]+)</g, (m, inner) => {
+    if (/^\s*$/.test(inner)) return m;
+    if (shouldSkip(inner.trim())) return m;
+    return '>' + maskText(inner) + '<';
+  }).replace(/(\w+)="([^"]+)"/g, (m, attr, val) => {
+    const SKIP_ATTRS = /^(type|status|role|code|version|lang|xmlns|encoding|format|level|action|id|class|name)$/i;
+    if (SKIP_ATTRS.test(attr)) return m;
+    if (shouldSkip(val)) return m;
+    return `${attr}="${maskText(val)}"`;
+  });
+}
+
+// CSV: mask values, preserve header
+function maskCSV(text, sep=',') {
+  const lines = text.split('\n');
+  const out = lines.map((line, idx) => {
+    if (idx === 0) return line; // header
+    const cells = line.split(sep);
+    return cells.map(cell => {
+      const trimmed = cell.trim().replace(/^["']|["']$/g, '');
+      if (!trimmed || shouldSkip(trimmed)) return cell;
+      const masked = maskText(trimmed);
+      return cell.replace(trimmed, masked);
+    }).join(sep);
+  });
+  return out.join('\n');
+}
+
+// YAML: mask values after `: `
+function maskYaml(text) {
+  return text.replace(/^(\s*[\w\-]+:\s*)(.+)$/gm, (m, key, val) => {
+    const SKIP = /^(?:date|time|created|updated|status|type|version|level|code|enabled|disabled|true|false|null|\d{4}[-/]\d)/i;
+    if (SKIP.test(val.trim()) || shouldSkip(val.trim())) return m;
+    return key + maskText(val);
+  });
+}
+
+// INI: mask values after `=`
+function maskIni(text) {
+  return text.replace(/^(\s*[\w\-]+\s*=\s*)(.+)$/gm, (m, key, val) => {
+    if (shouldSkip(val.trim())) return m;
+    return key + maskText(val);
+  });
+}
+
+// SQL: mask string literals in VALUES / SET
+function maskSQL(text) {
+  return text.replace(/'([^']+)'/g, (m, inner) => {
+    if (shouldSkip(inner)) return m;
+    return "'" + maskText(inner) + "'";
+  });
+}
+
+// ─── DOCX (ZIP-based XML) ─── //
+async function maskDocx(file) {
+  const JSZip = await loadJSZip();
+  const ab = await readArrayBuffer(file);
+  const zip = await JSZip.loadAsync(ab);
+
+  const partsToProcess = [
+    'word/document.xml',
+    'word/header1.xml','word/header2.xml','word/header3.xml',
+    'word/footer1.xml','word/footer2.xml','word/footer3.xml',
+    'word/comments.xml',
+  ];
+
+  for (const part of partsToProcess) {
+    if (zip.files[part]) {
+      let xml = await zip.files[part].async('string');
+      // mask <w:t> elements
+      xml = xml.replace(/(<w:t(?:\s[^>]*)?>)([^<]*)(<\/w:t>)/g, (m, open, text, close) => {
+        if (!text.trim()) return m;
+        if (shouldSkip(text.trim())) return m;
+        return open + maskText(text) + close;
+      });
+      zip.file(part, xml);
+    }
+  }
+
+  if (SETTINGS.meta && zip.files['docProps/core.xml']) {
+    let core = await zip.files['docProps/core.xml'].async('string');
+    core = core
+      .replace(/<dc:creator>[^<]*<\/dc:creator>/g, '<dc:creator>MASKED</dc:creator>')
+      .replace(/<dc:description>[^<]*<\/dc:description>/g, '<dc:description></dc:description>')
+      .replace(/<cp:lastModifiedBy>[^<]*<\/cp:lastModifiedBy>/g, '<cp:lastModifiedBy>MASKED</cp:lastModifiedBy>');
+    zip.file('docProps/core.xml', core);
+  }
+
+  const blob = await zip.generateAsync({type:'blob', compression:'DEFLATE'});
+  return blob;
+}
+
+// ─── XLSX (ZIP-based XML) ─── //
+async function maskXlsx(file) {
+  const JSZip = await loadJSZip();
+  const ab = await readArrayBuffer(file);
+  const zip = await JSZip.loadAsync(ab);
+
+  // Mask shared strings (most cell text lives here)
+  if (zip.files['xl/sharedStrings.xml']) {
+    let xml = await zip.files['xl/sharedStrings.xml'].async('string');
+    xml = xml.replace(/(<t(?:\s[^>]*)?>)([^<]*)(<\/t>)/g, (m, open, text, close) => {
+      if (!text.trim()) return m;
+      if (shouldSkip(text.trim())) return m;
+      return open + maskText(text) + close;
+    });
+    zip.file('xl/sharedStrings.xml', xml);
+  }
+
+  // Mask inline strings in sheets
+  const sheetFiles = Object.keys(zip.files).filter(f => /^xl\/worksheets\/sheet\d+\.xml$/.test(f));
+  for (const sf of sheetFiles) {
+    let xml = await zip.files[sf].async('string');
+    xml = xml.replace(/(<is>.*?<t>)([^<]*)(<\/t>.*?<\/is>)/g, (m, pre, text, post) => {
+      if (!text.trim() || shouldSkip(text.trim())) return m;
+      return pre + maskText(text) + post;
+    });
+    zip.file(sf, xml);
+  }
+
+  if (SETTINGS.meta && zip.files['docProps/core.xml']) {
+    let core = await zip.files['docProps/core.xml'].async('string');
+    core = core
+      .replace(/<dc:creator>[^<]*<\/dc:creator>/g, '<dc:creator>MASKED</dc:creator>')
+      .replace(/<cp:lastModifiedBy>[^<]*<\/cp:lastModifiedBy>/g, '<cp:lastModifiedBy>MASKED</cp:lastModifiedBy>');
+    zip.file('docProps/core.xml', core);
+  }
+
+  const blob = await zip.generateAsync({type:'blob', compression:'DEFLATE'});
+  return blob;
+}
+
+// ─── PDF ─── //
+async function maskPdf(file) {
+  // For PDF: we can only do text-level manipulation on uncompressed streams
+  // Real PDF masking requires PDF.js + canvas rerender — we do best-effort on raw bytes
+  const ab = await readArrayBuffer(file);
+  const bytes = new Uint8Array(ab);
+  const text = new TextDecoder('latin1').decode(bytes);
+
+  // Mask metadata in Info dictionary
+  let masked = text
+    .replace(/\/Author\s*\([^)]*\)/g, '/Author (MASKED)')
+    .replace(/\/Creator\s*\([^)]*\)/g, '/Creator (MASKED)')
+    .replace(/\/Producer\s*\([^)]*\)/g, '/Producer (MASKED)')
+    .replace(/\/Title\s*\([^)]*\)/g, '/Title (MASKED)')
+    .replace(/\/Subject\s*\([^)]*\)/g, '/Subject (MASKED)');
+
+  // Attempt plain text stream masking (only works on uncompressed PDFs)
+  masked = masked.replace(/BT([\s\S]*?)ET/g, (m, inner) => {
+    const maskedInner = inner.replace(/\(([^)]+)\)/g, (m2, content) => {
+      if (shouldSkip(content)) return m2;
+      const mk = maskText(content);
+      return `(${mk})`;
+    });
+    return 'BT' + maskedInner + 'ET';
+  });
+
+  const encoded = new TextEncoder().encode(masked);
+  return new Blob([encoded], {type:'application/pdf'});
+}
+
+// ─── INLINE ZIP ENGINE (no CDN required) ─── //
+// Full ZIP read/write with DEFLATE via browser's CompressionStream API
+const InlineZip = (() => {
+  // ── Utilities ──
+  const u8 = (b) => new Uint8Array(b);
+  const view = (b) => new DataView(b instanceof ArrayBuffer ? b : b.buffer);
+  const str2u8 = (s) => new TextEncoder().encode(s);
+  const u8str = (u) => new TextDecoder('utf-8').decode(u);
+
+  function readU16(dv, o) { return dv.getUint16(o, true); }
+  function readU32(dv, o) { return dv.getUint32(o, true); }
+  function writeU16(dv, o, v) { dv.setUint16(o, v, true); }
+  function writeU32(dv, o, v) { dv.setUint32(o, v, true); }
+
+  function concat(...arrays) {
+    const total = arrays.reduce((s, a) => s + a.length, 0);
+    const out = new Uint8Array(total);
+    let off = 0;
+    for (const a of arrays) { out.set(a, off); off += a.length; }
+    return out;
+  }
+
+  // ── CRC-32 ──
+  const CRC_TABLE = (() => {
+    const t = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      t[n] = c;
+    }
+    return t;
+  })();
+  function crc32(buf, crc = 0) {
+    crc ^= 0xFFFFFFFF;
+    for (let i = 0; i < buf.length; i++) crc = (crc >>> 8) ^ CRC_TABLE[(crc ^ buf[i]) & 0xFF];
+    return (crc ^ 0xFFFFFFFF) >>> 0;
+  }
+
+  // ── Inflate (decompress) via DecompressionStream ──
+  async function inflate(data) {
+    try {
+      // Add zlib header for raw deflate streams
+      const wrapped = concat(new Uint8Array([0x78, 0x9C]), data);
+      const ds = new DecompressionStream('deflate');
+      const writer = ds.writable.getWriter();
+      writer.write(wrapped);
+      writer.close();
+      const chunks = [];
+      const reader = ds.readable.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+      }
+      return concat(...chunks);
+    } catch(e) {
+      // Try raw deflate without header
+      try {
+        const ds2 = new DecompressionStream('raw-deflate');
+        const writer2 = ds2.writable.getWriter();
+        writer2.write(data);
+        writer2.close();
+        const chunks2 = [];
+        const reader2 = ds2.readable.getReader();
+        while (true) {
+          const { done, value } = await reader2.read();
+          if (done) break;
+          chunks2.push(value);
+        }
+        return concat(...chunks2);
+      } catch(e2) { throw new Error('inflate failed: ' + e2.message); }
+    }
+  }
+
+  // ── Deflate (compress) via CompressionStream ──
+  async function deflate(data) {
+    const cs = new CompressionStream('deflate');
+    const writer = cs.writable.getWriter();
+    writer.write(data);
+    writer.close();
+    const chunks = [];
+    const reader = cs.readable.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+    }
+    const compressed = concat(...chunks);
+    // Strip 2-byte zlib header and 4-byte adler checksum
+    return compressed.slice(2, compressed.length - 4);
+  }
+
+  // ── Parse ZIP central directory ──
+  async function parse(arrayBuffer) {
+    const bytes = u8(arrayBuffer);
+    const dv = view(arrayBuffer);
+    const len = bytes.length;
+
+    // Find End of Central Directory record
+    let eocdOff = -1;
+    for (let i = len - 22; i >= 0; i--) {
+      if (dv.getUint32(i, false) === 0x504B0506) { eocdOff = i; break; }
+    }
+    if (eocdOff < 0) throw new Error('Not a valid ZIP file');
+
+    const cdOffset = readU32(dv, eocdOff + 16);
+    const cdSize   = readU32(dv, eocdOff + 12);
+    const entries  = {};
+    let p = cdOffset;
+
+    while (p < cdOffset + cdSize) {
+      if (readU32(dv, p) !== 0x504B0102) break;
+      const method    = readU16(dv, p + 10);
+      const crc       = readU32(dv, p + 16);
+      const compSize  = readU32(dv, p + 20);
+      const uncompSize= readU32(dv, p + 24);
+      const fnLen     = readU16(dv, p + 28);
+      const extraLen  = readU16(dv, p + 30);
+      const cmtLen    = readU16(dv, p + 32);
+      const localOff  = readU32(dv, p + 42);
+      const name      = u8str(bytes.slice(p + 46, p + 46 + fnLen));
+      entries[name]   = { method, crc, compSize, uncompSize, localOff, name };
+      p += 46 + fnLen + extraLen + cmtLen;
+    }
+
+    return { bytes, dv, entries };
+  }
+
+  // ── Read file from local header ──
+  async function readEntry(zipData, entry) {
+    const { bytes } = zipData;
+    const dv = view(bytes.buffer);
+    const lo = entry.localOff;
+    if (readU32(dv, lo) !== 0x504B0304) throw new Error('Bad local header for ' + entry.name);
+    const fnLen    = readU16(dv, lo + 26);
+    const extraLen = readU16(dv, lo + 28);
+    const dataOff  = lo + 30 + fnLen + extraLen;
+    const comp     = bytes.slice(dataOff, dataOff + entry.compSize);
+    if (entry.method === 0) return comp; // stored
+    if (entry.method === 8) return inflate(comp); // deflated
+    throw new Error('Unsupported compression method ' + entry.method);
+  }
+
+  // ── ZipFile class ──
+  class ZipFile {
+    constructor(zipData) {
+      this._zipData = zipData;
+      this.files = {};
+      for (const [name, entry] of Object.entries(zipData.entries)) {
+        this.files[name] = {
+          name,
+          _entry: entry,
+          _zip: zipData,
+          async async(type) {
+            const raw = await readEntry(zipData, entry);
+            if (type === 'string') return u8str(raw);
+            if (type === 'uint8array') return raw;
+            if (type === 'arraybuffer') return raw.buffer;
+            return raw;
+          }
+        };
+      }
+    }
+
+    file(name, content) {
+      // Set/update a file
+      const data = typeof content === 'string' ? str2u8(content) : content;
+      this.files[name] = {
+        name,
+        _data: data,
+        _modified: true,
+        async async(type) {
+          if (type === 'string') return u8str(data);
+          if (type === 'uint8array') return data;
+          return data.buffer;
+        }
+      };
+    }
+
+    async generateAsync({ type = 'blob', compression = 'DEFLATE' } = {}) {
+      const parts = [];
+      const centralDir = [];
+
+      for (const [name, file] of Object.entries(this.files)) {
+        if (name.endsWith('/')) continue; // skip directories
+        let rawData;
+        if (file._modified) {
+          rawData = file._data;
+        } else {
+          rawData = await readEntry(this._zipData, file._entry);
+        }
+
+        const nameBytes = str2u8(name);
+        const crc = crc32(rawData);
+        let compData;
+        let method;
+
+        // Use DEFLATE for text-like files, STORE for small/binary
+        const useDeflate = compression === 'DEFLATE' && rawData.length > 64;
+        if (useDeflate) {
+          compData = await deflate(rawData);
+          // If deflate doesn't help, store
+          if (compData.length >= rawData.length) { compData = rawData; method = 0; }
+          else method = 8;
+        } else {
+          compData = rawData;
+          method = 0;
+        }
+
+        const localOff = parts.reduce((s, p) => s + p.length, 0);
+
+        // Local file header
+        const lh = new Uint8Array(30 + nameBytes.length);
+        const lv = view(lh.buffer);
+        writeU32(lv, 0, 0x504B0304);
+        writeU16(lv, 4, 20);       // version needed
+        writeU16(lv, 6, 0);        // flags
+        writeU16(lv, 8, method);
+        writeU32(lv, 14, crc);
+        writeU32(lv, 18, compData.length);
+        writeU32(lv, 22, rawData.length);
+        writeU16(lv, 26, nameBytes.length);
+        writeU16(lv, 28, 0);
+        lh.set(nameBytes, 30);
+
+        parts.push(lh, compData);
+
+        // Central directory entry
+        const cd = new Uint8Array(46 + nameBytes.length);
+        const cv = view(cd.buffer);
+        writeU32(cv, 0, 0x504B0102);
+        writeU16(cv, 4, 20);      // version made
+        writeU16(cv, 6, 20);      // version needed
+        writeU16(cv, 8, 0);       // flags
+        writeU16(cv, 10, method);
+        writeU32(cv, 16, crc);
+        writeU32(cv, 20, compData.length);
+        writeU32(cv, 24, rawData.length);
+        writeU16(cv, 28, nameBytes.length);
+        writeU16(cv, 30, 0);      // extra
+        writeU16(cv, 32, 0);      // comment
+        writeU16(cv, 34, 0);      // disk
+        writeU16(cv, 36, 0);      // int attrs
+        writeU32(cv, 38, 0);      // ext attrs
+        writeU32(cv, 42, localOff);
+        cd.set(nameBytes, 46);
+        centralDir.push(cd);
+      }
+
+      const cdBytes = concat(...centralDir);
+      const cdOffset = parts.reduce((s, p) => s + p.length, 0);
+
+      // End of central directory
+      const eocd = new Uint8Array(22);
+      const ev = view(eocd.buffer);
+      writeU32(ev, 0, 0x504B0506);
+      writeU16(ev, 4, 0);
+      writeU16(ev, 6, 0);
+      writeU16(ev, 8, centralDir.length);
+      writeU16(ev, 10, centralDir.length);
+      writeU32(ev, 12, cdBytes.length);
+      writeU32(ev, 16, cdOffset);
+      writeU16(ev, 20, 0);
+
+      const final = concat(...parts, cdBytes, eocd);
+      if (type === 'blob') return new Blob([final], { type: 'application/zip' });
+      if (type === 'uint8array') return final;
+      return final.buffer;
+    }
+  }
+
+  return {
+    loadAsync: async (arrayBuffer) => {
+      const zipData = await parse(arrayBuffer);
+      return new ZipFile(zipData);
+    }
+  };
+})();
+
+async function loadJSZip() {
+  return InlineZip;
+}
+
+// ─── UI HELPERS ─── //
+function getActiveCategories() {
+  return Array.from(document.querySelectorAll('[data-cat].active')).map(el => el.dataset.cat);
+}
+function getActiveTemplate() {
+  const el = document.querySelector('[data-tpl].active');
+  return el ? el.dataset.tpl : 'universal';
+}
+
+function toast(msg, type='success', duration=4000) {
+  const c = document.getElementById('toast-container');
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  const icons = { success:'✅', error:'❌', warn:'⚠️' };
+  el.innerHTML = `<span class="toast-icon">${icons[type]||'ℹ️'}</span><span class="toast-text">${msg}</span><span class="toast-close">✕</span>`;
+  el.querySelector('.toast-close').onclick = () => el.remove();
+  c.appendChild(el);
+  setTimeout(() => { el.style.opacity='0'; el.style.transition='opacity .4s'; setTimeout(()=>el.remove(),400); }, duration);
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB';
+  return (bytes/1048576).toFixed(2) + ' MB';
+}
+
+// ─── FILE DROP ─── //
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const fileInfo  = document.getElementById('fileInfo');
+const fileName  = document.getElementById('fileName');
+const fileSize  = document.getElementById('fileSize');
+
+function setFile(file) {
+  currentFile = file;
+  processedBlob = null;
+  fileName.textContent = file.name;
+  fileSize.textContent = formatSize(file.size);
+  fileInfo.classList.add('show');
+  document.getElementById('resultCard').classList.remove('show');
+  toast(`Файл «${file.name}» загружен`, 'success');
+}
+
+fileInput.addEventListener('change', e => { if(e.target.files[0]) setFile(e.target.files[0]); });
+document.getElementById('fileRemove').onclick = e => {
+  e.stopPropagation();
+  currentFile = null;
+  fileInfo.classList.remove('show');
+  fileInput.value = '';
+};
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
+});
+
+// ─── TABS ─── //
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+// ─── CHECKBOXES ─── //
+document.querySelectorAll('.check-item').forEach(item => {
+  item.addEventListener('click', () => {
+    const isActive = item.classList.contains('active');
+    if (isActive) {
+      const activeCount = document.querySelectorAll('.check-item.active').length;
+      if (activeCount <= 1) { toast('Должна быть выбрана хотя бы одна категория', 'warn'); return; }
+    }
+    item.classList.toggle('active');
+    item.querySelector('input').checked = item.classList.contains('active');
+  });
+});
+
+// ─── TEMPLATES ─── //
+document.querySelectorAll('.tpl-item').forEach(item => {
+  item.addEventListener('click', () => {
+    document.querySelectorAll('.tpl-item').forEach(i => i.classList.remove('active'));
+    item.classList.add('active');
+    item.querySelector('input').checked = true;
+  });
+});
+
+// ─── TOGGLES ─── //
+document.querySelectorAll('.toggle').forEach(toggle => {
+  toggle.addEventListener('click', () => {
+    toggle.classList.toggle('on');
+    SETTINGS[toggle.dataset.key] = toggle.classList.contains('on');
+  });
+});
+
+// ─── PROCESS ─── //
+document.getElementById('btnProcess').addEventListener('click', async () => {
+  if (!currentFile) { toast('Сначала загрузите файл', 'warn'); return; }
+  if (getActiveCategories().length === 0 && getActiveTemplate() === 'universal') {
+    toast('Выберите хотя бы одну категорию или шаблон', 'warn'); return;
+  }
+
+  const btn = document.getElementById('btnProcess');
+  btn.disabled = true; btn.classList.add('loading');
+  resetMasker();
+
+  try {
+    processedBlob = await processFile(currentFile);
+    showResult();
+    toast('Маскирование завершено успешно', 'success');
+  } catch(err) {
+    console.error(err);
+    toast('Ошибка обработки: ' + err.message, 'error', 7000);
+  } finally {
+    btn.disabled = false; btn.classList.remove('loading');
+  }
+});
+
+function showResult() {
+  const card = document.getElementById('resultCard');
+  card.classList.add('show');
+
+  const total = changeLog.length;
+  const uniq  = new Set(changeLog.map(c=>c.original)).size;
+  const cats  = new Set(changeLog.map(c=>c.cat)).size;
+
+  document.getElementById('statTotal').textContent = total;
+  document.getElementById('statUniq').textContent  = uniq;
+  document.getElementById('statCats').textContent  = cats;
+
+  const list = document.getElementById('changesList');
+  if (!SETTINGS.log) { list.innerHTML = '<div style="color:var(--text3);font-size:.75rem">Журнал отключён в настройках</div>'; return; }
+  if (changeLog.length === 0) { list.innerHTML = '<div style="color:var(--text3);font-size:.75rem">Совпадений не найдено — проверьте выбранные категории и шаблон</div>'; return; }
+
+  list.innerHTML = changeLog.slice(0, 200).map(c =>
+    `<div class="change-line">
+       <span class="change-orig" title="${escHtml(c.original)}">${escHtml(truncate(c.original,30))}</span>
+       <span class="change-arrow">→</span>
+       <span class="change-mask">${escHtml(c.mask)}</span>
+       <span class="change-cat">${c.cat}</span>
+     </div>`
+  ).join('') + (changeLog.length > 200 ? `<div style="color:var(--text3);padding-top:4px">… и ещё ${changeLog.length-200} замен</div>` : '');
+}
+
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function truncate(s,n) { return s.length>n ? s.slice(0,n)+'…' : s; }
+
+// ─── REGEX RULES EDITOR ─── //
+const regexRules = []; // [{pattern, prefix}]
+
+function renderRules() {
+  const container = document.getElementById('regexRules');
+  if (regexRules.length === 0) {
+    container.innerHTML = '<div style="color:var(--text3);font-size:.72rem;font-family:var(--mono);text-align:center;padding:8px 0;">Паттерны не добавлены</div>';
+    syncHiddenTextarea();
+    return;
+  }
+  container.innerHTML = regexRules.map((r, i) => `
+    <div style="display:flex;gap:6px;align-items:center;" data-rule-idx="${i}">
+      <input type="text" value="${escHtml(r.pattern)}" placeholder="regex паттерн"
+        style="flex:2;background:var(--bg);border:1px solid var(--border2);border-radius:5px;color:var(--accent2);font-family:var(--mono);font-size:.7rem;padding:5px 8px;outline:none;"
+        oninput="updateRule(${i},'pattern',this.value)"
+        onfocus="this.style.borderColor='var(--accent2)'" onblur="this.style.borderColor='var(--border2)'"/>
+      <input type="text" value="${escHtml(r.prefix)}" placeholder="МЕТКА" maxlength="12"
+        style="flex:0 0 90px;background:var(--bg);border:1px solid var(--border2);border-radius:5px;color:var(--accent);font-family:var(--mono);font-size:.7rem;padding:5px 8px;outline:none;text-transform:uppercase;"
+        oninput="updateRule(${i},'prefix',this.value.toUpperCase())"
+        onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border2)'"/>
+      <button onclick="removeRule(${i})" title="Удалить"
+        style="flex-shrink:0;width:26px;height:26px;background:transparent;border:1px solid var(--border);border-radius:4px;color:var(--danger);cursor:pointer;font-size:.8rem;line-height:1;"
+        onmouseover="this.style.background='rgba(255,59,92,.1)'" onmouseout="this.style.background='transparent'">✕</button>
+    </div>
+  `).join('');
+  syncHiddenTextarea();
+}
+
+function addRule() {
+  regexRules.push({ pattern: '', prefix: 'CUSTOM' });
+  renderRules();
+  // Focus first input of new row
+  const inputs = document.querySelectorAll('#regexRules input[type=text]');
+  if (inputs.length >= 2) inputs[inputs.length - 2].focus();
+}
+
+function removeRule(i) { regexRules.splice(i, 1); renderRules(); }
+
+function updateRule(i, key, val) {
+  regexRules[i][key] = val;
+  syncHiddenTextarea();
+}
+
+function syncHiddenTextarea() {
+  // Keep hidden textarea in sync so maskText() can read patterns grouped by prefix
+  // Format: pattern|||PREFIX per line
+  document.getElementById('customRegex').value = regexRules
+    .filter(r => r.pattern.trim())
+    .map(r => r.pattern.trim() + '|||' + (r.prefix.trim() || 'CUSTOM'))
+    .join('\n');
+}
+
+document.getElementById('btnAddRule').addEventListener('click', addRule);
+renderRules(); // init empty state
+
+// ─── DOWNLOAD ─── //
+document.getElementById('btnDownload').addEventListener('click', () => {
+  if (!processedBlob) { toast('Нет обработанного файла', 'warn'); return; }
+  const ext = currentFile.name.split('.').pop();
+  const base = currentFile.name.replace(/\.[^.]+$/, '');
+  const url = URL.createObjectURL(processedBlob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `${base}_masked.${ext}`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  toast('Файл скачан', 'success');
+});
+</script>
+</body>
+</html>
