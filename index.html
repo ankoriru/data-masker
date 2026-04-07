@@ -605,61 +605,169 @@ let processedBlob = null;
 let changeLog = [];
 
 // ─── PATTERN LIBRARY ─── //
+// NOTE:  does NOT work with Cyrillic in JS — use lookahead/lookbehind instead
+const CYR_BOUND_L = '(?<![а-яёА-ЯЁa-zA-Z0-9])';
+const CYR_BOUND_R = '(?![а-яёА-ЯЁa-zA-Z0-9])';
+
 const PATTERNS = {
-  // Personal
-  EMAIL:      { re: /\b[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}\b/g, cat:'personal', prefix:'EMAIL' },
-  PHONE:      { re: /(?:\+7|8)?[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}/g, cat:'personal', prefix:'PHONE' },
-  FULL_NAME:  { re: /\b[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+(?:ич|овна|евна|инична)?\b/g, cat:'personal', prefix:'NAME' },
-  PASSPORT:   { re: /\b\d{4}\s?\d{6}\b/g, cat:'personal', prefix:'PASP' },
-  SNILS:      { re: /\b\d{3}-\d{3}-\d{3}\s?\d{2}\b/g, cat:'personal', prefix:'SNILS' },
-  INN_PERS:   { re: /\bИНН[:\s]*\d{12}\b/gi, cat:'personal', prefix:'INN_P' },
-  ADDRESS:    { re: /(?:г\.|ул\.|пр\.|пер\.)[\s\w.,]+\d+[а-яА-Я]?(?:\/\d+)?/g, cat:'personal', prefix:'ADDR' },
-  // Commercial
-  INN_ORG:    { re: /\b\d{10}\b(?=\D)/g, cat:'commercial', prefix:'INN' },
-  OGRN:       { re: /\b1\d{12}\b|\b[35]\d{14}\b/g, cat:'commercial', prefix:'OGRN' },
-  BIC:        { re: /\b0\d{8}\b/g, cat:'commercial', prefix:'BIC' },
-  ACCOUNT:    { re: /\b\d{20}\b/g, cat:'commercial', prefix:'ACC' },
-  // Technical
-  IPv4:       { re: /\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b/g, cat:'technical', prefix:'IP' },
-  IPv6:       { re: /\b(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b/g, cat:'technical', prefix:'IPV6' },
-  MAC:        { re: /\b([0-9a-fA-F]{2}[:\-]){5}[0-9a-fA-F]{2}\b/g, cat:'technical', prefix:'MAC' },
-  API_KEY:    { re: /(?:api[_\-]?key|apikey|access[_\-]?token|bearer)\s*[=:]\s*["']?[A-Za-z0-9\-_.~+/]{20,}["']?/gi, cat:'technical', prefix:'APIKEY' },
-  PASSWORD:   { re: /(?:password|passwd|pwd|secret|credentials?)\s*[=:]\s*["']?[^\s"',;]{4,}["']?/gi, cat:'technical', prefix:'PWD' },
-  CONN_STR:   { re: /(?:Server|Data Source|Host)\s*=\s*[^;,"'\s]+/gi, cat:'technical', prefix:'HOST' },
-  TOKEN_JWT:  { re: /eyJ[A-Za-z0-9\-_]+\.eyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_.+/]*/g, cat:'technical', prefix:'JWT' },
-  // SAP
-  SAP_GUID:   { re: /\b[0-9A-F]{8}[0-9A-F]{4}[0-9A-F]{4}[0-9A-F]{4}[0-9A-F]{12}\b/g, cat:'sap', prefix:'GUID' },
-  SAP_BNAME:  { re: /BNAME\s*=\s*["']?[\w.@\-]{3,}["']?/gi, cat:'sap', prefix:'BNAME' },
-  SAP_KUNNR:  { re: /KUNNR\s*=\s*["']?\d{6,10}["']?/gi, cat:'sap', prefix:'KUNNR' },
-  SAP_TCODE:  { re: /TCODE\s*=\s*["']?\w{2,6}["']?/gi, cat:'sap', prefix:'TCODE' },
-  SAP_MANDT:  { re: /MANDT\s*=\s*["']?\d{3}["']?/gi, cat:'sap', prefix:'MANDT' },
-  // Siebel
-  SBL_ROWID:  { re: /ROW_ID\s*=\s*["']?[\w\-]{15,}["']?/gi, cat:'siebel', prefix:'ROWID' },
-  SBL_BUSOBJ: { re: /BusObject\s*=\s*["']?[\w\s]{3,}["']?/gi, cat:'siebel', prefix:'BUSOBJ' },
-  // Documentum
+  // ── Personal ──
+  // Email — no , use negative lookahead
+  EMAIL: {
+    re: /[a-zA-Z0-9._%+\-]{1,64}@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g,
+    cat:'personal', prefix:'EMAIL'
+  },
+  // Phone RU — extended: +7/8/7 prefix or bare 10-digit
+  PHONE: {
+    re: /(?:(?:\+7|8|7)[\s\-]?\(?[489]\d{2}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2})|(?<!\d)(?:[489]\d{2})[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}(?!\d)/g,
+    cat:'personal', prefix:'PHONE'
+  },
+  // ФИО — 2 or 3 Cyrillic words (Cyrillic  fix)
+  FULL_NAME: {
+    re: /(?<![а-яёА-ЯЁ])[А-ЯЁ][а-яё]{1,20}(?:\s+[А-ЯЁ][а-яё]{1,20}){1,2}(?![а-яёА-ЯЁ])/g,
+    cat:'personal', prefix:'NAME'
+  },
+  // Passport RU: XXXX XXXXXX or XXXXXXXXXX
+  PASSPORT: {
+    re: /(?<!\d)(?:\d{4}[\s\-]\d{6}|\d{10})(?!\d)/g,
+    cat:'personal', prefix:'PASP'
+  },
+  // СНИЛС: XXX-XXX-XXX XX
+  SNILS: {
+    re: /(?<!\d)\d{3}-\d{3}-\d{3}[\s]\d{2}(?!\d)/g,
+    cat:'personal', prefix:'SNILS'
+  },
+  // ИНН физ. лица (12 цифр) с меткой или без
+  INN_PERS: {
+    re: /(?:ИНН|инн)[:\s]*\d{12}|(?<!\d)\d{12}(?!\d)/gi,
+    cat:'personal', prefix:'INN_P'
+  },
+  // Адреса РФ
+  ADDRESS: {
+    re: /(?:г(?ород)?[.\s]|ул(?ица)?[.\s]|пр(?оспект)?[.\s]|пер(?еулок)?[.\s]|д(?ом)?[.\s]|кв[.\s])[а-яёА-ЯЁ\w\s.,\-№]{3,60}(?:\d+[а-яА-Я]?(?:\/\d+)?)?/gi,
+    cat:'personal', prefix:'ADDR'
+  },
+  // Дата рождения (когда явно указана)
+  BIRTHDATE: {
+    re: /(?:дата\s*рождения|д\.?\s*р\.?|born|birthday)[:\s]*\d{1,2}[.\-\/]\d{1,2}[.\-\/]\d{2,4}/gi,
+    cat:'personal', prefix:'BDATE'
+  },
+
+  // ── Commercial ──
+  // ИНН организации (10 цифр)
+  INN_ORG: {
+    re: /(?:ИНН|инн)[:\s]*\d{10}(?!\d)|(?<!\d)\d{10}(?!\d)(?=[^\d]|$)/gi,
+    cat:'commercial', prefix:'INN'
+  },
+  // ОГРН (13 или 15 цифр)
+  OGRN: {
+    re: /(?:ОГРН|огрн)[:\s]*\d{13,15}|(?<!\d)[135]\d{12}(?!\d)|(?<!\d)[356]\d{14}(?!\d)/gi,
+    cat:'commercial', prefix:'OGRN'
+  },
+  // БИК (9 цифр, начинается на 04)
+  BIC: {
+    re: /(?:БИК|бик)[:\s]*\d{9}|(?<!\d)04\d{7}(?!\d)/gi,
+    cat:'commercial', prefix:'BIC'
+  },
+  // Расчётный счёт (20 цифр)
+  ACCOUNT: {
+    re: /(?<!\d)\d{20}(?!\d)/g,
+    cat:'commercial', prefix:'ACC'
+  },
+  // Суммы с валютой
+  AMOUNT: {
+    re: /(?<!\w)\d[\d\s]{1,14}\d\s*(?:руб(?:лей|\.)?|₽|RUB|USD|EUR|\$|€)/gi,
+    cat:'commercial', prefix:'AMOUNT'
+  },
+
+  // ── Technical ──
+  IPv4: {
+    re: /(?<!\d)(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)(?!\d)/g,
+    cat:'technical', prefix:'IP'
+  },
+  IPv6: {
+    re: /(?<![0-9a-fA-F:])(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}(?![0-9a-fA-F:])/g,
+    cat:'technical', prefix:'IPV6'
+  },
+  MAC: {
+    re: /(?<![0-9a-fA-F])(?:[0-9a-fA-F]{2}[:\-]){5}[0-9a-fA-F]{2}(?![0-9a-fA-F])/g,
+    cat:'technical', prefix:'MAC'
+  },
+  API_KEY: {
+    re: /(?:api[_\-]?key|apikey|access[_\-]?token|bearer|x-api-key)\s*[=:\s]+["']?[A-Za-z0-9\-_.~+\/]{16,}["']?/gi,
+    cat:'technical', prefix:'APIKEY'
+  },
+  PASSWORD: {
+    re: /(?:password|passwd|pwd|secret|pass|credentials?)\s*[=:]\s*["']?[^\s"',;<>
+]{4,}["']?/gi,
+    cat:'technical', prefix:'PWD'
+  },
+  CONN_STR: {
+    re: /(?:Server|Data\s*Source|Hostname?|Host)\s*=\s*[^\s;,"'
+]{3,}/gi,
+    cat:'technical', prefix:'HOST'
+  },
+  TOKEN_JWT: {
+    re: /eyJ[A-Za-z0-9\-_]+\.eyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_.+\/]*/g,
+    cat:'technical', prefix:'JWT'
+  },
+  PRIVATE_KEY: {
+    re: /-----BEGIN[A-Z ]+PRIVATE KEY-----[\s\S]+?-----END[A-Z ]+PRIVATE KEY-----/g,
+    cat:'technical', prefix:'PRIVKEY'
+  },
+
+  // ── SAP ──
+  SAP_GUID: {
+    re: /(?<![0-9A-Fa-f])[0-9A-F]{8}[-]?[0-9A-F]{4}[-]?[0-9A-F]{4}[-]?[0-9A-F]{4}[-]?[0-9A-F]{12}(?![0-9A-Fa-f])/g,
+    cat:'sap', prefix:'GUID'
+  },
+  SAP_BNAME:  { re: /BNAME\s*=\s*["']?[\w.@\-]{3,}["']?/gi,  cat:'sap', prefix:'BNAME' },
+  SAP_KUNNR:  { re: /KUNNR\s*=\s*["']?\d{6,10}["']?/gi,       cat:'sap', prefix:'KUNNR' },
+  SAP_TCODE:  { re: /TCODE\s*=\s*["']?\w{2,8}["']?/gi,        cat:'sap', prefix:'TCODE' },
+  SAP_MANDT:  { re: /MANDT\s*=\s*["']?\d{3}["']?/gi,          cat:'sap', prefix:'MANDT' },
+
+  // ── Siebel ──
+  SBL_ROWID:  { re: /ROW_ID\s*=\s*["']?[\w\-]{10,}["']?/gi,  cat:'siebel', prefix:'ROWID' },
+  SBL_BUSOBJ: { re: /BusObject(?:Name)?\s*=\s*["']?[\w\s]{3,}["']?/gi, cat:'siebel', prefix:'BUSOBJ' },
+
+  // ── Documentum ──
   DCT_OBJID:  { re: /r_object_id\s*=\s*["']?[0-9a-f]{16}["']?/gi, cat:'documentum', prefix:'OBJID' },
-  DCT_WF:     { re: /workflow[_\-]?id\s*=\s*["']?[\w\-]{8,}["']?/gi, cat:'documentum', prefix:'WFID' },
-  // Web server
-  WEB_UA:     { re: /(?:User-Agent|useragent):\s*.+/gi, cat:'webserver', prefix:'UA' },
-  WEB_COOKIE: { re: /Cookie:\s*.+/gi, cat:'webserver', prefix:'COOKIE' },
-  WEB_REFERER:{ re: /Referer:\s*https?:\/\/[^\s]+/gi, cat:'webserver', prefix:'REFERER' },
-  // DB
-  DB_PWD:     { re: /Password\s*=\s*[^;,"'\s]+/gi, cat:'db', prefix:'DBPWD' },
-  DB_UID:     { re: /(?:User\s*Id|UID)\s*=\s*[^;,"'\s]+/gi, cat:'db', prefix:'DBUID' },
+  DCT_WF:     { re: /workflow[_\-]?id\s*=\s*["']?[\w\-]{6,}["']?/gi, cat:'documentum', prefix:'WFID' },
+
+  // ── Web server ──
+  WEB_UA:     { re: /(?:User-Agent|useragent):\s*[^
+]+/gi, cat:'webserver', prefix:'UA' },
+  WEB_COOKIE: { re: /(?:Cookie|Set-Cookie):\s*[^
+]+/gi,    cat:'webserver', prefix:'COOKIE' },
+  WEB_REFERER:{ re: /Referer:\s*https?:\/\/[^\s
+]+/gi,     cat:'webserver', prefix:'REFERER' },
+  WEB_IP_LOG: { re: /^(?:\d{1,3}\.){3}\d{1,3}(?=\s+-\s+-)/gm, cat:'webserver', prefix:'IP' },
+
+  // ── Database ──
+  DB_PWD:     { re: /(?:Password|Pwd)\s*=\s*[^;,"'\s
+]+/gi,  cat:'db', prefix:'DBPWD' },
+  DB_UID:     { re: /(?:User\s*Id|UID|User)\s*=\s*[^;,"'\s
+]+/gi, cat:'db', prefix:'DBUID' },
 };
 
-// Date/status patterns — DO NOT mask
+// Date/status patterns — these values should NOT be masked
+// Important: skip only pure date/status values, not mixed content
 const SKIP_RE = [
-  /\b\d{4}[-/.]\d{2}[-/.]\d{2}(?:T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})?)?\b/,
-  /\b\d{2}[-/.]\d{2}[-/.]\d{4}\b/,
-  /\b(?:status|state|type|role|level|code|flag|action|mode|priority|severity)\s*[:=]\s*\w+/i,
-  /\b(?:DEBUG|INFO|WARN|WARNING|ERROR|FATAL|NOTICE|CRITICAL|TRACE)\b/,
-  /\b(?:true|false|null|none|undefined|yes|no)\b/i,
+  // Pure ISO date
+  /^\d{4}[-.]\d{2}[-.]\d{2}(?:T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})?)?$/,
+  // Pure RU date
+  /^\d{1,2}[.\/]\d{1,2}[.\/]\d{2,4}$/,
+  // Log severity word alone
+  /^(?:DEBUG|INFO|WARN(?:ING)?|ERROR|FATAL|NOTICE|CRITICAL|TRACE)$/i,
+  // Boolean / null alone
+  /^(?:true|false|null|none|undefined|yes|no|да|нет)$/i,
+  // Pure number (not phone/passport — those caught by specific patterns)
+  /^\d{1,3}(?:[.,]\d{1,3})*$/,
 ];
 
 function shouldSkip(val) {
   if (!SETTINGS.dates) return false;
-  return SKIP_RE.some(r => r.test(val));
+  const trimmed = val.trim();
+  return SKIP_RE.some(r => r.test(trimmed));
 }
 
 // Masking state
@@ -906,29 +1014,54 @@ function maskSQL(text) {
 }
 
 // ─── DOCX (ZIP-based XML) ─── //
+// Key fix: DOCX often splits a single word/phrase across multiple <w:t> tags
+// (because of formatting runs). We must collect all text in a paragraph,
+// mask the concatenated string, then put it back into the first <w:t> tag.
+function maskDocxXml(xml) {
+  // Process each paragraph independently — collect all w:t text, mask together
+  return xml.replace(/<w:p[ >][\s\S]*?<\/w:p>/g, para => {
+    const SEG_RE = /(<w:t(?:\s[^>]*)?>)([^<]*)(<\/w:t>)/g;
+    const segments = [];
+    let m;
+    while ((m = SEG_RE.exec(para)) !== null) {
+      segments.push({ open: m[1], text: m[2], close: m[3], index: m.index, fullLen: m[0].length });
+    }
+    if (!segments.length) return para;
+
+    // Concatenate paragraph text and mask
+    const fullText = segments.map(s => s.text).join('');
+    if (!fullText.trim()) return para;
+    const masked = maskText(fullText);
+    if (masked === fullText) return para; // nothing changed
+
+    // Put masked text into first segment, clear the rest
+    let result = para;
+    for (let i = segments.length - 1; i >= 0; i--) {
+      const s = segments[i];
+      const replacement = i === 0
+        ? s.open + masked + s.close
+        : s.open + s.close;
+      result = result.slice(0, s.index) + replacement + result.slice(s.index + s.fullLen);
+    }
+    return result;
+  });
+}
+
 async function maskDocx(file) {
   const JSZip = await loadJSZip();
   const ab = await readArrayBuffer(file);
   const zip = await JSZip.loadAsync(ab);
 
-  const partsToProcess = [
-    'word/document.xml',
-    'word/header1.xml','word/header2.xml','word/header3.xml',
-    'word/footer1.xml','word/footer2.xml','word/footer3.xml',
-    'word/comments.xml',
-  ];
+  // Collect all part names from zip to handle arbitrary header/footer numbers
+  const partsToProcess = Object.keys(zip.files).filter(name =>
+    name === 'word/document.xml' ||
+    /^word\/(header|footer|comments|footnotes|endnotes)\d*\.xml$/.test(name)
+  );
 
   for (const part of partsToProcess) {
-    if (zip.files[part]) {
-      let xml = await zip.files[part].async('string');
-      // mask <w:t> elements
-      xml = xml.replace(/(<w:t(?:\s[^>]*)?>)([^<]*)(<\/w:t>)/g, (m, open, text, close) => {
-        if (!text.trim()) return m;
-        if (shouldSkip(text.trim())) return m;
-        return open + maskText(text) + close;
-      });
-      zip.file(part, xml);
-    }
+    let xml = await zip.files[part].async('string');
+    xml = maskDocxXml(xml);
+    zip.file(part, xml);
   }
 
   if (SETTINGS.meta && zip.files['docProps/core.xml']) {
@@ -950,24 +1083,48 @@ async function maskXlsx(file) {
   const ab = await readArrayBuffer(file);
   const zip = await JSZip.loadAsync(ab);
 
-  // Mask shared strings (most cell text lives here)
+  // Shared strings — this is where most cell text lives in XLSX
+  // Each <si> contains one string; <t> may be split with xml:space="preserve"
   if (zip.files['xl/sharedStrings.xml']) {
     let xml = await zip.files['xl/sharedStrings.xml'].async('string');
-    xml = xml.replace(/(<t(?:\s[^>]*)?>)([^<]*)(<\/t>)/g, (m, open, text, close) => {
-      if (!text.trim()) return m;
-      if (shouldSkip(text.trim())) return m;
-      return open + maskText(text) + close;
+
+    // Process each <si> block: collect all <t> text, mask together, put back
+    xml = xml.replace(/<si>[\s\S]*?<\/si>/g, si => {
+      const segments = [];
+      const RE = /(<t(?:\s[^>]*)?>)([^<]*)(<\/t>)/g;
+      let m;
+      while ((m = RE.exec(si)) !== null) {
+        segments.push({ open: m[1], text: m[2], close: m[3], index: m.index, fullLen: m[0].length });
+      }
+      if (!segments.length) return si;
+      const fullText = segments.map(s => s.text).join('');
+      if (!fullText.trim() || shouldSkip(fullText.trim())) return si;
+      const masked = maskText(fullText);
+      if (masked === fullText) return si;
+      // Put masked text into first <t>, clear the rest
+      let result = si;
+      for (let i = segments.length - 1; i >= 0; i--) {
+        const s = segments[i];
+        const repl = i === 0 ? s.open + masked + s.close : s.open + s.close;
+        result = result.slice(0, s.index) + repl + result.slice(s.index + s.fullLen);
+      }
+      return result;
     });
+
     zip.file('xl/sharedStrings.xml', xml);
   }
 
-  // Mask inline strings in sheets
+  // Inline strings in sheets (rare but possible)
   const sheetFiles = Object.keys(zip.files).filter(f => /^xl\/worksheets\/sheet\d+\.xml$/.test(f));
   for (const sf of sheetFiles) {
     let xml = await zip.files[sf].async('string');
-    xml = xml.replace(/(<is>.*?<t>)([^<]*)(<\/t>.*?<\/is>)/g, (m, pre, text, post) => {
-      if (!text.trim() || shouldSkip(text.trim())) return m;
-      return pre + maskText(text) + post;
+    // Inline string cells <c t="inlineStr"><is><t>...</t></is></c>
+    xml = xml.replace(/(<is>)([\s\S]*?)(<\/is>)/g, (m, open, inner, close) => {
+      const masked = inner.replace(/(<t(?:\s[^>]*)?>)([^<]*)(<\/t>)/g, (m2, o, text, c) => {
+        if (!text.trim() || shouldSkip(text.trim())) return m2;
+        return o + maskText(text) + c;
+      });
+      return open + masked + close;
     });
     zip.file(sf, xml);
   }
