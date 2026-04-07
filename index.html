@@ -14,57 +14,87 @@
     --mono: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
     --sans: 'Segoe UI', 'Inter', system-ui, sans-serif;
   }
+
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; }
-  .app { max-width: 1100px; margin: 0 auto; padding: 32px 20px; position: relative; z-index: 1; }
-  header { display: flex; align-items: center; gap: 16px; margin-bottom: 30px; }
-  .header-icon { width: 48px; height: 48px; background: linear-gradient(135deg, var(--accent), var(--accent2)); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 24px; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; overflow-x: hidden; }
+  
+  /* Сетка на фоне */
+  body::before {
+    content: ''; position: fixed; inset: 0;
+    background-image: linear-gradient(rgba(0,212,170,.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0,212,170,.03) 1px, transparent 1px);
+    background-size: 40px 40px; z-index: 0; pointer-events: none;
+  }
+
+  .app { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; padding: 32px 20px 80px; }
+
+  header { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 40px; }
+  .header-icon { width: 48px; height: 48px; background: linear-gradient(135deg, var(--accent), var(--accent2)); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+  .header-text h1 { font-family: var(--mono); font-size: 1.25rem; font-weight: 700; line-height: 1.3; }
+  .header-text p { font-size: .8rem; color: var(--accent); font-family: var(--mono); text-transform: uppercase; letter-spacing: .08em; }
+
   .columns { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-  @media(max-width:768px){ .columns{ grid-template-columns: 1fr; } }
-  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-bottom: 20px; }
-  .card-header { padding: 12px 18px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: .8rem; color: var(--text2); text-transform: uppercase; }
+  @media(max-width:720px){ .columns { grid-template-columns: 1fr; } }
+
+  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .card-header { padding: 12px 18px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: .82rem; color: var(--text2); text-transform: uppercase; display: flex; align-items: center; gap: 8px; }
   .card-body { padding: 18px; }
-  .drop-zone { border: 2px dashed var(--border2); border-radius: 8px; padding: 40px; text-align: center; cursor: pointer; transition: .2s; }
-  .drop-zone:hover { border-color: var(--accent); background: rgba(0,212,170,0.05); }
-  .tab-nav { display: flex; gap: 4px; background: var(--bg); padding: 4px; border-radius: 6px; margin-bottom: 15px; }
-  .tab-btn { flex: 1; padding: 8px; border: none; background: none; color: var(--text2); cursor: pointer; border-radius: 4px; font-size: 0.85rem; }
+
+  .drop-zone { border: 2px dashed var(--border2); border-radius: 8px; padding: 40px 20px; text-align: center; cursor: pointer; transition: all .2s; position: relative; }
+  .drop-zone:hover { border-color: var(--accent); background: rgba(0,212,170,.04); }
+  .drop-zone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+  .file-info { display: none; margin-top: 14px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 6px; padding: 10px 14px; font-family: var(--mono); font-size: .82rem; align-items: center; gap: 10px; }
+  .file-info.show { display: flex; }
+
+  .tab-nav { display: flex; gap: 2px; margin-bottom: 16px; background: var(--bg); border-radius: 6px; padding: 3px; border: 1px solid var(--border); }
+  .tab-btn { flex: 1; padding: 7px; border: none; border-radius: 4px; background: transparent; color: var(--text2); cursor: pointer; font-size: .82rem; }
   .tab-btn.active { background: var(--bg3); color: var(--text); }
-  .tab-panel { display: none; } .tab-panel.active { display: block; }
-  .btn-primary { width: 100%; padding: 14px; background: var(--accent); color: #000; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; font-family: var(--mono); }
-  .btn-primary:disabled { opacity: 0.5; }
-  .result-card { display: none; margin-top: 20px; } .result-card.show { display: block; }
-  .stat-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 15px; }
-  .stat-box { background: var(--bg3); padding: 15px; border-radius: 6px; text-align: center; }
-  .stat-val { font-size: 1.5rem; color: var(--accent); font-weight: 700; }
-  .changes-list { background: #000; padding: 10px; border-radius: 6px; max-height: 250px; overflow-y: auto; font-family: var(--mono); font-size: 0.75rem; }
-  .change-line { display: flex; gap: 10px; border-bottom: 1px solid #222; padding: 4px 0; }
-  .orig { color: var(--danger); text-decoration: line-through; }
-  .mask { color: var(--accent); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  .btn-primary { width: 100%; padding: 13px; background: linear-gradient(135deg, var(--accent), #00b896); border: none; border-radius: 8px; color: #000; font-family: var(--mono); font-weight: 700; cursor: pointer; margin-top: 20px; }
+  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .result-card { margin-top: 24px; display: none; }
+  .result-card.show { display: block; }
+  .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px; }
+  .stat-box { background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 12px; text-align: center; }
+  .stat-val { font-family: var(--mono); font-size: 1.4rem; color: var(--accent); font-weight: 700; }
+  .changes-list { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 12px; max-height: 200px; overflow-y: auto; font-family: var(--mono); font-size: .8rem; }
+  
+  .change-line { display: flex; gap: 8px; border-bottom: 1px solid var(--border); padding: 4px 0; }
+  .c-orig { color: var(--danger); text-decoration: line-through; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px; }
+  .c-mask { color: var(--accent); }
+
+  .toast { position: fixed; bottom: 20px; right: 20px; background: var(--bg3); border: 1px solid var(--accent); padding: 12px 20px; border-radius: 8px; font-size: 0.8rem; z-index: 1000; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
 </style>
 </head>
 <body>
+
 <div class="app">
   <header>
     <div class="header-icon">🛡️</div>
-    <div>
-      <h1 style="font-size:1.2rem">MaskData Pro</h1>
-      <p style="color:var(--accent); font-size:0.8rem; font-family:var(--mono)">OFFLINE DATA OBFUSCATION</p>
+    <div class="header-text">
+      <h1>Маскирование и обфускация данных</h1>
+      <p>Корпоративная защита ПДн и логов</p>
     </div>
   </header>
 
   <div class="columns">
     <div>
-      <div class="card">
-        <div class="card-header">Файл</div>
+      <div class="card" style="margin-bottom:20px">
+        <div class="card-header">📁 Загрузка</div>
         <div class="card-body">
           <div class="drop-zone" id="dropZone">
-            <input type="file" id="fileInput" style="display:none">
-            <p>Нажмите или перетащите файл</p>
-            <p style="font-size:0.7rem; color:var(--text3); margin-top:10px">LOG, TXT, CSV, DOCX, XLSX, PDF, JSON</p>
+            <input type="file" id="fileInput">
+            <div style="font-size: 30px">⬆️</div>
+            <div style="font-weight: 600; margin: 10px 0 5px">Выберите файл</div>
+            <div style="font-size: 0.75rem; color: var(--text3)">DOCX, XLSX, LOG, TXT, JSON, CSV</div>
           </div>
-          <div id="fileDisplay" style="display:none; margin-top:15px; font-family:var(--mono); font-size:0.8rem">
-            <span id="fn" style="color:var(--accent2)"></span>
-            <span id="fs" style="color:var(--text3); margin-left:10px"></span>
+          <div class="file-info" id="fileInfo">
+            <span>📄</span>
+            <span id="fileName" style="color: var(--accent); flex: 1; overflow: hidden; text-overflow: ellipsis;">-</span>
+            <span id="fileRemove" style="cursor: pointer; color: var(--danger)">✕</span>
           </div>
         </div>
       </div>
@@ -72,284 +102,272 @@
       <div class="card">
         <div class="card-body">
           <div class="tab-nav">
-            <button class="tab-btn active" onclick="showTab('rules')">Правила</button>
-            <button class="tab-btn" onclick="showTab('adv')">Настройки</button>
+            <button class="tab-btn active" data-tab="universal">Универсальный</button>
+            <button class="tab-btn" data-tab="custom">Свой паттерн</button>
           </div>
-          <div id="tab-rules" class="tab-panel active">
-             <p style="font-size:0.8rem; margin-bottom:10px; color:var(--text2)">Используется универсальный набор правил (ПДн, финансы, IT).</p>
-             <div id="customRulesContainer"></div>
-             <button onclick="addCustomRule()" style="width:100%; background:none; border:1px dashed var(--border2); color:var(--text3); padding:8px; cursor:pointer; font-size:0.7rem">+ Своё регулярное выражение</button>
+          
+          <div class="tab-panel active" id="tab-universal">
+             <div style="font-size: 0.8rem; color: var(--text2); line-height: 1.6">
+               Активированы правила для:
+               <ul style="margin-left: 20px; color: var(--accent2)">
+                 <li>ФИО (включая сложные фамилии)</li>
+                 <li>Телефоны, Email, IP-адреса</li>
+                 <li>Паспорта, ИНН, СНИЛС, БИК</li>
+                 <li>Банковские счета и карты</li>
+               </ul>
+             </div>
           </div>
-          <div id="tab-adv" class="tab-panel">
-            <label style="display:flex; align-items:center; gap:10px; font-size:0.85rem">
-              <input type="checkbox" id="consistent" checked> Консистентность (одинаковые данные = одинаковые маски)
-            </label>
+
+          <div class="tab-panel" id="tab-custom">
+            <input type="text" id="customRegex" placeholder="Regex (напр. [A-Z]{3}-\d{4})" 
+                   style="width: 100%; background: var(--bg); border: 1px solid var(--border2); color: #fff; padding: 10px; border-radius: 6px; font-family: var(--mono)">
           </div>
         </div>
       </div>
 
-      <button class="btn-primary" id="btnRun">ОБРАБОТАТЬ ФАЙЛ</button>
+      <button class="btn-primary" id="btnProcess">ОБРАБОТАТЬ</button>
     </div>
 
     <div>
-      <div class="card result-card" id="resCard">
-        <div class="card-header">Результат</div>
-        <div class="card-body">
-          <div class="stat-grid">
-            <div class="stat-box"><div class="stat-val" id="stTotal">0</div><div style="font-size:0.6rem">ЗАМЕН</div></div>
-            <div class="stat-box"><div class="stat-val" id="stUniq">0</div><div style="font-size:0.6rem">УНИКАЛЬНЫХ</div></div>
-            <div class="stat-box"><div class="stat-val" id="stTime">0</div><div style="font-size:0.6rem">МС</div></div>
+      <div class="card" style="min-height: 180px">
+        <div class="card-header">📊 Монитор</div>
+        <div class="card-body" id="statusMsg" style="color: var(--text3); font-size: 0.85rem">
+          Ожидание загрузки файла...
+        </div>
+      </div>
+
+      <div class="result-card" id="resultCard">
+        <div class="card">
+          <div class="card-header" style="color: var(--accent)">✅ Успешно</div>
+          <div class="card-body">
+            <div class="stat-grid">
+              <div class="stat-box"><div class="stat-val" id="statTotal">0</div><div style="font-size: 0.6rem">ЗАМЕН</div></div>
+              <div class="stat-box"><div class="stat-val" id="statUniq">0</div><div style="font-size: 0.6rem">УНИК.</div></div>
+              <div class="stat-box"><div class="stat-val" id="statTime">0</div><div style="font-size: 0.6rem">МС</div></div>
+            </div>
+            <div class="changes-list" id="logList"></div>
+            <button class="btn-primary" id="btnDownload" style="background: var(--accent2)">СКАЧАТЬ</button>
           </div>
-          <div class="changes-list" id="logList"></div>
-          <button class="btn-primary" style="margin-top:15px; background:var(--accent2)" id="btnSave">СКАЧАТЬ</button>
         </div>
       </div>
     </div>
   </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
 <script>
-// --- ПАТТЕРНЫ (РУССКИЙ ЯЗЫК + ТЕХНИЧЕСКИЕ ДАННЫЕ) ---
-const PATTERNS = [
-  { id: 'EMAIL', re: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, prefix: 'EMAIL' },
-  { id: 'PHONE', re: /(?:\+7|8|7)[\s\-]?\(?[489]\d{2}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}/g, prefix: 'PHONE' },
-  // Улучшенное ФИО (Кириллица с поддержкой дефисов)
-  { id: 'FIO', re: /(?<![а-яА-ЯёЁ])[А-ЯЁ][а-яё]{1,20}(?:\s+[А-ЯЁ][а-яё]{1,20}(?:-[А-ЯЁ][а-яё]{1,20})?){1,2}(?![а-яА-ЯёЁ])/g, prefix: 'NAME' },
-  { id: 'PASSPORT', re: /(?<!\d)(?:\d{4}[\s]\d{6}|\d{10})(?!\d)/g, prefix: 'PASP' },
-  { id: 'INN', re: /(?<!\d)(?:\d{10}|\d{12})(?!\d)/g, prefix: 'INN' },
-  { id: 'SNILS', re: /(?<!\d)\d{3}-\d{3}-\d{3}\s\d{2}(?!\d)/g, prefix: 'SNILS' },
-  // Адреса (базовое распознавание)
-  { id: 'ADDR', re: /(?:ул\.|просп\.|пр\.|пер\.|бул\.|наб\.|г\.|обл\.|респ\.|д\.)\s?[А-ЯЁ][а-яёА-ЯЁ0-9\s\-\.,]{3,50}/g, prefix: 'ADDR' },
-  // Технические данные
-  { id: 'IP', re: /(?<!\d)(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)(?!\d)/g, prefix: 'IP' },
-  { id: 'JWT', re: /eyJ[A-Za-z0-9-_]+\.eyJ[A-Za-z0-9-_]+\.[A-Za-z0-9-._+/]*/g, prefix: 'JWT' },
-  { id: 'KEY', re: /-----BEGIN [A-Z ]+-----[\s\S]+?-----END [A-Z ]+-----/g, prefix: 'KEY' }
-];
+  // --- РАСШИРЕННЫЕ ПРАВИЛА ---
+  const PATTERNS = [
+    { id: 'EMAIL', re: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, prefix: 'EMAIL' },
+    { id: 'PHONE', re: /(?:\+7|8|7)[\s\-]?\(?[489]\d{2}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}/g, prefix: 'PHONE' },
+    // ФИО: учитывает сложные фамилии (через дефис) и отчества
+    { id: 'FIO', re: /(?<![а-яА-ЯёЁ])[А-ЯЁ][а-яё]{1,20}(?:\s+[А-ЯЁ][а-яё]{1,20}(?:-[А-ЯЁ][а-яё]{1,20})?){1,2}(?![а-яА-ЯёЁ])/g, prefix: 'NAME' },
+    { id: 'PASSPORT', re: /(?<!\d)(?:\d{4}[\s]\d{6}|\d{10})(?!\d)/g, prefix: 'PASP' },
+    { id: 'INN', re: /(?<!\d)(?:\d{10}|\d{12})(?!\d)/g, prefix: 'INN' },
+    { id: 'SNILS', re: /(?<!\d)\d{3}-\d{3}-\d{3}\s\d{2}(?!\d)/g, prefix: 'SNILS' },
+    { id: 'IP', re: /(?<!\d)(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)(?!\d)/g, prefix: 'IP' },
+    { id: 'CARD', re: /(?<!\d)\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}(?!\d)/g, prefix: 'CARD' },
+    { id: 'ACCOUNT', re: /(?<!\d)[43]\d{19}(?!\d)/g, prefix: 'ACC' },
+    { id: 'JWT', re: /eyJ[A-Za-z0-9-_]+\.eyJ[A-Za-z0-9-_]+\.[A-Za-z0-9-._+/]*/g, prefix: 'TOKEN' }
+  ];
 
-let currentFile = null;
-let resultBlob = null;
-let maskMap = new Map();
-let counterMap = new Map();
-let logs = [];
+  let currentFile = null;
+  let processedBlob = null;
+  let changeLog = [];
+  let maskMap = new Map();
 
-// --- ЛОГИКА МАСКИРОВАНИЯ ---
-function getMask(val, prefix) {
-  const isConsistent = document.getElementById('consistent').checked;
-  if (isConsistent && maskMap.has(val)) return maskMap.get(val);
-  
-  let count = (counterMap.get(prefix) || 0) + 1;
-  counterMap.set(prefix, count);
-  
-  const mask = `${prefix}_${count.toString().padStart(4, '0')}`;
-  if (isConsistent) maskMap.set(val, mask);
-  logs.push({ orig: val, mask: mask });
-  return mask;
-}
+  // --- ЛОГИКА МАСКИРОВАНИЯ ---
+  function applyMasking(text) {
+    if (!text) return text;
+    let matches = [];
 
-function maskText(text) {
-  if (!text) return text;
-  let matches = [];
-  
-  // Собираем все вхождения
-  PATTERNS.forEach(p => {
-    let m;
-    p.re.lastIndex = 0;
-    while ((m = p.re.exec(text)) !== null) {
-      matches.push({ start: m.index, end: m.index + m[0].length, val: m[0], prefix: p.prefix });
-    }
-  });
-
-  // Пользовательские правила
-  document.querySelectorAll('.custom-rule').forEach(row => {
-    const rxStr = row.querySelector('.rx').value;
-    const pfx = row.querySelector('.px').value || 'CUST';
-    if (!rxStr) return;
-    try {
-      const rx = new RegExp(rxStr, 'g');
+    // Применяем встроенные паттерны
+    PATTERNS.forEach(p => {
       let m;
-      while ((m = rx.exec(text)) !== null) {
-        matches.push({ start: m.index, end: m.index + m[0].length, val: m[0], prefix: pfx });
+      p.re.lastIndex = 0;
+      while ((m = p.re.exec(text)) !== null) {
+        matches.push({ start: m.index, end: m.index + m[0].length, val: m[0], prefix: p.prefix });
       }
-    } catch(e) {}
-  });
+    });
 
-  if (matches.length === 0) return text;
-
-  // Сортируем и убираем пересечения (жадный алгоритм)
-  matches.sort((a, b) => (b.end - b.start) - (a.end - a.start) || a.start - b.start);
-  
-  let used = new Array(text.length).fill(false);
-  let finalMatches = [];
-  
-  matches.forEach(m => {
-    let overlap = false;
-    for (let i = m.start; i < m.end; i++) if (used[i]) overlap = true;
-    if (!overlap) {
-      for (let i = m.start; i < m.end; i++) used[i] = true;
-      finalMatches.push(m);
-    }
-  });
-
-  finalMatches.sort((a, b) => b.start - a.start);
-  let result = text;
-  finalMatches.forEach(m => {
-    const mask = getMask(m.val, m.prefix);
-    result = result.slice(0, m.start) + mask + result.slice(m.end);
-  });
-  return result;
-}
-
-// --- ОБРАБОТКА ФОРМАТОВ ---
-async function process() {
-  if (!currentFile) return alert('Выберите файл');
-  const startTime = Date.now();
-  maskMap.clear(); counterMap.clear(); logs = [];
-  
-  const ext = currentFile.name.split('.').pop().toLowerCase();
-  
-  if (['docx', 'xlsx'].includes(ext)) {
-    resultBlob = await processOffice(currentFile, ext);
-  } else {
-    const text = await currentFile.text();
-    const masked = maskText(text);
-    resultBlob = new Blob([masked], { type: 'text/plain;charset=utf-8' });
-  }
-
-  // UI Update
-  document.getElementById('stTotal').innerText = logs.length;
-  document.getElementById('stUniq').innerText = maskMap.size || logs.length;
-  document.getElementById('stTime').innerText = Date.now() - startTime;
-  document.getElementById('resCard').style.display = 'block';
-  
-  const logDiv = document.getElementById('logList');
-  logDiv.innerHTML = logs.slice(0, 100).map(l => `
-    <div class="change-line">
-      <span class="orig">${l.orig}</span> <span>→</span> <span class="mask">${l.mask}</span>
-    </div>
-  `).join('');
-}
-
-// --- УЛУЧШЕННЫЙ ОФИСНЫЙ ДВИЖОК (ZIP/XML) ---
-async function processOffice(file, ext) {
-  const zip = await InlineZip.loadAsync(await file.arrayBuffer());
-  const files = Object.keys(zip.files);
-  
-  for (let f of files) {
-    if (f.endsWith('.xml')) {
-      let content = await zip.files[f].async('string');
-      
-      // Склеивание разбитых текстовых узлов <w:t> или <t>
-      // Ищем параграфы <w:p> или строки <si>
-      const containerTag = ext === 'docx' ? 'w:p' : 'si';
-      const regex = new RegExp(`<${containerTag}[^>]*>[\\s\\S]*?<\\/${containerTag}>`, 'g');
-      
-      content = content.replace(regex, (block) => {
-        const textRegex = /<[w:]?t[^>]*>([^<]*)<\/[w:]?t>/g;
-        let parts = [];
+    // Применяем кастомный regex
+    const customStr = document.getElementById('customRegex').value;
+    if (customStr) {
+      try {
+        const cr = new RegExp(customStr, 'g');
         let m;
-        while ((m = textRegex.exec(block)) !== null) {
-          parts.push({ full: m[0], val: m[1], index: m.index });
+        while ((m = cr.exec(text)) !== null) {
+          matches.push({ start: m.index, end: m.index + m[0].length, val: m[0], prefix: 'CUST' });
         }
-        
-        if (parts.length === 0) return block;
-        
-        // Собираем полный текст, декодируя сущности
-        let fullRaw = parts.map(p => p.val).join('');
-        let decoded = fullRaw.replace(/&#(\d+);/g, (_, d) => String.fromCharCode(d))
-                             .replace(/&/g, '&').replace(/</g, '<').replace(/>/g, '>');
-        
-        let masked = maskText(decoded);
-        if (masked === decoded) return block;
-        
-        // Экранируем для XML
-        masked = masked.replace(/&/g, '&').replace(/</g, '<').replace(/>/g, '>');
-
-        // Записываем результат в первый тег, остальные очищаем
-        let newBlock = block;
-        parts.forEach((p, i) => {
-          const replacement = i === 0 ? p.full.replace(p.val, masked) : p.full.replace(p.val, '');
-          newBlock = newBlock.replace(p.full, replacement);
-        });
-        return newBlock;
-      });
-      
-      zip.file(f, content);
+      } catch(e) {}
     }
-  }
-  return await zip.generateAsync({ type: 'blob' });
-}
 
-// --- МИНИ-БИБЛИОТЕКА ZIP (Исправленная для кириллицы и Office) ---
-const InlineZip = (() => {
-  const te = new TextEncoder();
-  const td = new TextDecoder();
-  return {
-    loadAsync: async (buffer) => {
-      const view = new DataView(buffer);
-      const files = {};
-      let offset = 0;
-      // Очень упрощенный парсер только для незашифрованных XML частей
-      while (offset < buffer.byteLength - 30) {
-        if (view.getUint32(offset, true) !== 0x04034b50) break;
-        const nameLen = view.getUint16(offset + 26, true);
-        const extraLen = view.getUint16(offset + 28, true);
-        const compSize = view.getUint32(offset + 18, true);
-        const method = view.getUint16(offset + 8, true);
-        const name = td.decode(buffer.slice(offset + 30, offset + 30 + nameLen));
-        const dataStart = offset + 30 + nameLen + extraLen;
-        
-        files[name] = {
-          async: async () => {
-            const raw = buffer.slice(dataStart, dataStart + compSize);
-            return method === 0 ? td.decode(raw) : "DEFLATED_DATA"; // В реальном коде нужен inflate
-          }
-        };
-        offset = dataStart + compSize;
+    if (matches.length === 0) return text;
+
+    // Сортируем: сначала самые длинные вхождения, потом по позиции
+    matches.sort((a, b) => (b.end - b.start) - (a.end - a.start) || a.start - b.start);
+
+    // Убираем пересечения
+    const finalMatches = [];
+    const usedIndices = new Set();
+
+    matches.forEach(m => {
+      let overlap = false;
+      for (let i = m.start; i < m.end; i++) {
+        if (usedIndices.has(i)) { overlap = true; break; }
       }
-      // Для полноценной работы рекомендуется подключить pako.js или fflate.
-      // Ниже представлена заглушка, в идеале вставьте JSZip через CDN.
-      alert("Для работы с DOCX/XLSX требуется библиотека компрессии. Текстовые файлы работают нативно.");
-      return { files, file: (n, c) => {} };
-    }
-  };
-})();
+      if (!overlap) {
+        for (let i = m.start; i < m.end; i++) usedIndices.add(i);
+        finalMatches.push(m);
+      }
+    });
 
-// --- UI EVENTS ---
-document.getElementById('dropZone').onclick = () => document.getElementById('fileInput').click();
-document.getElementById('fileInput').onchange = (e) => {
-  currentFile = e.target.files[0];
-  if (currentFile) {
-    document.getElementById('fileDisplay').style.display = 'block';
-    document.getElementById('fn').innerText = currentFile.name;
-    document.getElementById('fs').innerText = (currentFile.size / 1024).toFixed(1) + ' KB';
+    // Заменяем с конца, чтобы не съехали индексы
+    finalMatches.sort((a, b) => b.start - a.start);
+    let result = text;
+    finalMatches.forEach(m => {
+      let mask;
+      if (maskMap.has(m.val)) {
+        mask = maskMap.get(m.val);
+      } else {
+        const id = (maskMap.size + 1).toString().padStart(3, '0');
+        mask = `${m.prefix}_${id}`;
+        maskMap.set(m.val, mask);
+        changeLog.push({ o: m.val, m: mask });
+      }
+      result = result.slice(0, m.start) + mask + result.slice(m.end);
+    });
+
+    return result;
   }
-};
 
-function addCustomRule() {
-  const div = document.createElement('div');
-  div.className = 'custom-rule';
-  div.style = "display:flex; gap:5px; margin-top:5px";
-  div.innerHTML = `
-    <input type="text" class="rx" placeholder="Regex" style="flex:2; background:#000; border:1px solid #333; color:var(--accent2); padding:5px">
-    <input type="text" class="px" placeholder="Метка" style="flex:1; background:#000; border:1px solid #333; color:var(--accent); padding:5px">
-    <button onclick="this.parentElement.remove()" style="background:none; border:none; color:var(--danger); cursor:pointer">✕</button>
-  `;
-  document.getElementById('customRulesContainer').appendChild(div);
-}
+  // --- ОБРАБОТКА ФАЙЛОВ ---
+  async function processFile() {
+    if (!currentFile) return showToast("Сначала выберите файл");
+    
+    const startTime = Date.now();
+    changeLog = [];
+    maskMap.clear();
+    const status = document.getElementById('statusMsg');
+    status.innerHTML = "🔄 Обработка... Пожалуйста, подождите.";
 
-function showTab(t) {
-  document.querySelectorAll('.tab-panel, .tab-btn').forEach(el => el.classList.remove('active'));
-  document.getElementById('tab-' + t).classList.add('active');
-  event.target.classList.add('active');
-}
+    const ext = currentFile.name.split('.').pop().toLowerCase();
 
-document.getElementById('btnRun').onclick = process;
-document.getElementById('btnSave').onclick = () => {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(resultBlob);
-  a.download = "masked_" + currentFile.name;
-  a.click();
-};
+    try {
+      if (ext === 'docx') {
+        processedBlob = await processDocx(currentFile);
+      } else if (ext === 'xlsx') {
+        processedBlob = await processXlsx(currentFile);
+      } else {
+        // Текстовые форматы
+        const text = await currentFile.text();
+        const result = applyMasking(text);
+        processedBlob = new Blob([result], { type: 'text/plain;charset=utf-8' });
+      }
+
+      // Обновление UI
+      document.getElementById('statTotal').innerText = changeLog.length;
+      document.getElementById('statUniq').innerText = maskMap.size;
+      document.getElementById('statTime').innerText = Date.now() - startTime;
+      document.getElementById('resultCard').classList.add('show');
+      status.innerHTML = "✅ Файл успешно обработан.";
+
+      const list = document.getElementById('logList');
+      list.innerHTML = changeLog.slice(0, 100).map(i => `
+        <div class="change-line">
+          <span class="c-orig">${i.o}</span> ➡️ <span class="c-mask">${i.m}</span>
+        </div>
+      `).join('');
+
+    } catch (err) {
+      console.error(err);
+      status.innerHTML = "❌ Ошибка при обработке файла.";
+    }
+  }
+
+  // --- СПЕЦИАЛЬНАЯ ОБРАБОТКА XML (Office) ---
+  async function processDocx(file) {
+    const zip = await JSZip.loadAsync(file);
+    const contentFiles = ['word/document.xml', 'word/header1.xml', 'word/footer1.xml'];
+    
+    for (const path of contentFiles) {
+      if (zip.file(path)) {
+        let xml = await zip.file(path).async("string");
+        // Склеиваем содержимое параграфов <w:p>, чтобы не терять слова, разбитые тегами <w:t>
+        xml = xml.replace(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g, (pMatch) => {
+          return pMatch.replace(/(<w:t[^>]*>)(.*?)(<\/w:t>)/g, (tMatch, open, text, close) => {
+            return open + applyMasking(text) + close;
+          });
+        });
+        zip.file(path, xml);
+      }
+    }
+    return await zip.generateAsync({type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"});
+  }
+
+  async function processXlsx(file) {
+    const zip = await JSZip.loadAsync(file);
+    const sharedStrings = 'xl/sharedStrings.xml';
+    
+    if (zip.file(sharedStrings)) {
+      let xml = await zip.file(sharedStrings).async("string");
+      xml = xml.replace(/(<t[^>]*>)(.*?)(<\/t>)/g, (m, open, text, close) => {
+        return open + applyMasking(text) + close;
+      });
+      zip.file(sharedStrings, xml);
+    }
+    return await zip.generateAsync({type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+  }
+
+  // --- UI И СОБЫТИЯ ---
+  const fileInput = document.getElementById('fileInput');
+  const dropZone = document.getElementById('dropZone');
+
+  fileInput.onchange = (e) => handleFile(e.target.files[0]);
+  
+  function handleFile(file) {
+    if (!file) return;
+    currentFile = file;
+    document.getElementById('fileName').innerText = file.name;
+    document.getElementById('fileInfo').classList.add('show');
+    document.getElementById('statusMsg').innerText = "Файл готов к обработке.";
+    document.getElementById('resultCard').classList.remove('show');
+  }
+
+  document.getElementById('fileRemove').onclick = () => {
+    currentFile = null;
+    document.getElementById('fileInfo').classList.remove('show');
+    fileInput.value = "";
+  };
+
+  document.getElementById('btnProcess').onclick = processFile;
+
+  document.getElementById('btnDownload').onclick = () => {
+    const url = URL.createObjectURL(processedBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = "MASKED_" + currentFile.name;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    };
+  });
+
+  function showToast(msg) {
+    const t = document.createElement('div');
+    t.className = 'toast';
+    t.innerText = msg;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 3000);
+  }
 </script>
 </body>
 </html>
