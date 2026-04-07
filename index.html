@@ -4,6 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Маскирование документов — Защита данных</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
   :root {
     --bg: #12161d; --bg2: #1a1f28; --bg3: #222836;
@@ -16,32 +17,25 @@
   }
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; overflow-x: hidden; }
-  
-  /* Сетка на фоне */
-  body::before {
-    content: ''; position: fixed; inset: 0;
-    background-image: linear-gradient(rgba(0,212,170,.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0,212,170,.03) 1px, transparent 1px);
-    background-size: 40px 40px; z-index: 0; pointer-events: none;
-  }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; position: relative; }
+  body::before { content: ''; position: fixed; inset: 0; background-image: linear-gradient(rgba(0,212,170,.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0,212,170,.03) 1px, transparent 1px); background-size: 40px 40px; pointer-events: none; }
 
-  .app { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; padding: 32px 20px 80px; }
-
+  .app { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; padding: 32px 20px; }
   header { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 40px; }
   .header-icon { width: 48px; height: 48px; background: linear-gradient(135deg, var(--accent), var(--accent2)); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 22px; }
-  .header-text h1 { font-family: var(--mono); font-size: 1.25rem; font-weight: 700; line-height: 1.3; }
-  .header-text p { font-size: .8rem; color: var(--accent); font-family: var(--mono); text-transform: uppercase; letter-spacing: .08em; }
+  .header-text h1 { font-family: var(--mono); font-size: 1.25rem; font-weight: 700; color: var(--text); }
+  .header-text p { font-size: .8rem; color: var(--accent); font-family: var(--mono); text-transform: uppercase; }
 
   .columns { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-  @media(max-width:720px){ .columns { grid-template-columns: 1fr; } }
+  @media(max-width:768px){ .columns { grid-template-columns: 1fr; } }
 
-  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
-  .card-header { padding: 12px 18px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: .82rem; color: var(--text2); text-transform: uppercase; display: flex; align-items: center; gap: 8px; }
+  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-bottom: 20px; }
+  .card-header { padding: 12px 18px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: .82rem; color: var(--text2); text-transform: uppercase; }
   .card-body { padding: 18px; }
 
-  .drop-zone { border: 2px dashed var(--border2); border-radius: 8px; padding: 40px 20px; text-align: center; cursor: pointer; transition: all .2s; position: relative; }
+  .drop-zone { border: 2px dashed var(--border2); border-radius: 8px; padding: 40px 20px; text-align: center; cursor: pointer; transition: .2s; position: relative; }
   .drop-zone:hover { border-color: var(--accent); background: rgba(0,212,170,.04); }
-  .drop-zone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .drop-zone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
 
   .file-info { display: none; margin-top: 14px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 6px; padding: 10px 14px; font-family: var(--mono); font-size: .82rem; align-items: center; gap: 10px; }
   .file-info.show { display: flex; }
@@ -49,10 +43,9 @@
   .tab-nav { display: flex; gap: 2px; margin-bottom: 16px; background: var(--bg); border-radius: 6px; padding: 3px; border: 1px solid var(--border); }
   .tab-btn { flex: 1; padding: 7px; border: none; border-radius: 4px; background: transparent; color: var(--text2); cursor: pointer; font-size: .82rem; }
   .tab-btn.active { background: var(--bg3); color: var(--text); }
-  .tab-panel { display: none; }
-  .tab-panel.active { display: block; }
 
-  .btn-primary { width: 100%; padding: 13px; background: linear-gradient(135deg, var(--accent), #00b896); border: none; border-radius: 8px; color: #000; font-family: var(--mono); font-weight: 700; cursor: pointer; margin-top: 20px; }
+  .btn-primary { width: 100%; padding: 13px; background: linear-gradient(135deg, var(--accent), #00b896); border: none; border-radius: 8px; color: #000; font-family: var(--mono); font-weight: 700; cursor: pointer; transition: .2s; }
+  .btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
   .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
 
   .result-card { margin-top: 24px; display: none; }
@@ -60,13 +53,13 @@
   .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px; }
   .stat-box { background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 12px; text-align: center; }
   .stat-val { font-family: var(--mono); font-size: 1.4rem; color: var(--accent); font-weight: 700; }
-  .changes-list { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 12px; max-height: 200px; overflow-y: auto; font-family: var(--mono); font-size: .8rem; }
   
-  .change-line { display: flex; gap: 8px; border-bottom: 1px solid var(--border); padding: 4px 0; }
-  .c-orig { color: var(--danger); text-decoration: line-through; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px; }
-  .c-mask { color: var(--accent); }
-
-  .toast { position: fixed; bottom: 20px; right: 20px; background: var(--bg3); border: 1px solid var(--accent); padding: 12px 20px; border-radius: 8px; font-size: 0.8rem; z-index: 1000; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+  .changes-list { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 12px; max-height: 250px; overflow-y: auto; font-family: var(--mono); font-size: .75rem; }
+  .change-line { display: flex; gap: 8px; border-bottom: 1px solid var(--border); padding: 4px 0; align-items: center; }
+  .c-orig { color: var(--danger); text-decoration: line-through; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px; }
+  .c-mask { color: var(--accent); font-weight: bold; }
+  
+  #statusMsg { font-size: 0.85rem; line-height: 1.6; color: var(--text3); }
 </style>
 </head>
 <body>
@@ -75,25 +68,24 @@
   <header>
     <div class="header-icon">🛡️</div>
     <div class="header-text">
-      <h1>Маскирование и обфускация данных</h1>
-      <p>Корпоративная защита ПДн и логов</p>
+      <h1>Маскирование и обфускация</h1>
+      <p>Защита ПДн и коммерческой тайны v3.0</p>
     </div>
   </header>
 
   <div class="columns">
     <div>
-      <div class="card" style="margin-bottom:20px">
-        <div class="card-header">📁 Загрузка</div>
+      <div class="card">
+        <div class="card-header">📁 Загрузка данных</div>
         <div class="card-body">
           <div class="drop-zone" id="dropZone">
-            <input type="file" id="fileInput">
-            <div style="font-size: 30px">⬆️</div>
-            <div style="font-weight: 600; margin: 10px 0 5px">Выберите файл</div>
-            <div style="font-size: 0.75rem; color: var(--text3)">DOCX, XLSX, LOG, TXT, JSON, CSV</div>
+            <input type="file" id="fileInput" accept=".docx,.xlsx,.txt,.log,.json,.csv">
+            <div style="font-size: 32px">📄</div>
+            <div style="font-weight: 600; margin: 10px 0 5px">Выберите документ</div>
+            <div style="font-size: 0.7rem; color: var(--text3)">Поддерживаются все офисные и текстовые форматы</div>
           </div>
           <div class="file-info" id="fileInfo">
-            <span>📄</span>
-            <span id="fileName" style="color: var(--accent); flex: 1; overflow: hidden; text-overflow: ellipsis;">-</span>
+            <span id="fileName" style="color: var(--accent2); flex: 1; overflow: hidden; text-overflow: ellipsis;">-</span>
             <span id="fileRemove" style="cursor: pointer; color: var(--danger)">✕</span>
           </div>
         </div>
@@ -102,51 +94,53 @@
       <div class="card">
         <div class="card-body">
           <div class="tab-nav">
-            <button class="tab-btn active" data-tab="universal">Универсальный</button>
-            <button class="tab-btn" data-tab="custom">Свой паттерн</button>
+            <button class="tab-btn active" data-tab="rules">Правила</button>
+            <button class="tab-btn" data-tab="custom">Свой Regex</button>
           </div>
           
-          <div class="tab-panel active" id="tab-universal">
-             <div style="font-size: 0.8rem; color: var(--text2); line-height: 1.6">
-               Активированы правила для:
-               <ul style="margin-left: 20px; color: var(--accent2)">
-                 <li>ФИО (включая сложные фамилии)</li>
-                 <li>Телефоны, Email, IP-адреса</li>
-                 <li>Паспорта, ИНН, СНИЛС, БИК</li>
-                 <li>Банковские счета и карты</li>
-               </ul>
+          <div class="tab-panel active" id="tab-rules">
+             <div style="font-size: 0.8rem; color: var(--text2); line-height: 1.5">
+               <strong style="color:var(--accent)">Автоматическое обнаружение:</strong>
+               <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top:10px; color: var(--accent2)">
+                 <span>• ФИО (Кириллица)</span>
+                 <span>• Телефоны / Email</span>
+                 <span>• ИНН / СНИЛС</span>
+                 <span>• Паспорта РФ</span>
+                 <span>• Банковские счета</span>
+                 <span>• IP-адреса / Ключи</span>
+               </div>
              </div>
           </div>
 
           <div class="tab-panel" id="tab-custom">
-            <input type="text" id="customRegex" placeholder="Regex (напр. [A-Z]{3}-\d{4})" 
-                   style="width: 100%; background: var(--bg); border: 1px solid var(--border2); color: #fff; padding: 10px; border-radius: 6px; font-family: var(--mono)">
+            <input type="text" id="customRegex" placeholder="Напр: [A-Z]{2}-\d{6}" 
+                   style="width: 100%; background: var(--bg); border: 1px solid var(--border2); color: #fff; padding: 10px; border-radius: 6px; font-family: var(--mono); outline: none;">
           </div>
         </div>
       </div>
 
-      <button class="btn-primary" id="btnProcess">ОБРАБОТАТЬ</button>
+      <button class="btn-primary" id="btnProcess">ЗАПУСТИТЬ ОБРАБОТКУ</button>
     </div>
 
     <div>
-      <div class="card" style="min-height: 180px">
-        <div class="card-header">📊 Монитор</div>
-        <div class="card-body" id="statusMsg" style="color: var(--text3); font-size: 0.85rem">
-          Ожидание загрузки файла...
+      <div class="card" style="min-height: 160px">
+        <div class="card-header">📊 Статус системы</div>
+        <div class="card-body" id="statusMsg">
+          Система готова к работе. Пожалуйста, загрузите файл для анализа.
         </div>
       </div>
 
       <div class="result-card" id="resultCard">
         <div class="card">
-          <div class="card-header" style="color: var(--accent)">✅ Успешно</div>
+          <div class="card-header" style="color: var(--accent)">✅ Результаты обработки</div>
           <div class="card-body">
             <div class="stat-grid">
-              <div class="stat-box"><div class="stat-val" id="statTotal">0</div><div style="font-size: 0.6rem">ЗАМЕН</div></div>
-              <div class="stat-box"><div class="stat-val" id="statUniq">0</div><div style="font-size: 0.6rem">УНИК.</div></div>
-              <div class="stat-box"><div class="stat-val" id="statTime">0</div><div style="font-size: 0.6rem">МС</div></div>
+              <div class="stat-box"><div class="stat-val" id="stTotal">0</div><div style="font-size: 0.6rem">ЗАМЕН</div></div>
+              <div class="stat-box"><div class="stat-val" id="stUniq">0</div><div style="font-size: 0.6rem">УНИК.</div></div>
+              <div class="stat-box"><div class="stat-val" id="stTime">0</div><div style="font-size: 0.6rem">МС</div></div>
             </div>
             <div class="changes-list" id="logList"></div>
-            <button class="btn-primary" id="btnDownload" style="background: var(--accent2)">СКАЧАТЬ</button>
+            <button class="btn-primary" id="btnDownload" style="background: var(--accent2); margin-top: 15px">СКАЧАТЬ ЗАЩИЩЕННЫЙ ФАЙЛ</button>
           </div>
         </div>
       </div>
@@ -154,48 +148,44 @@
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-
 <script>
-  // --- РАСШИРЕННЫЕ ПРАВИЛА ---
+  // --- УНИВЕРСАЛЬНЫЕ ПРАВИЛА (ПДн + Коммерция) ---
   const PATTERNS = [
     { id: 'EMAIL', re: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, prefix: 'EMAIL' },
     { id: 'PHONE', re: /(?:\+7|8|7)[\s\-]?\(?[489]\d{2}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}/g, prefix: 'PHONE' },
-    // ФИО: учитывает сложные фамилии (через дефис) и отчества
+    // ФИО: поддержка сложных фамилий через дефис и инициалов
     { id: 'FIO', re: /(?<![а-яА-ЯёЁ])[А-ЯЁ][а-яё]{1,20}(?:\s+[А-ЯЁ][а-яё]{1,20}(?:-[А-ЯЁ][а-яё]{1,20})?){1,2}(?![а-яА-ЯёЁ])/g, prefix: 'NAME' },
     { id: 'PASSPORT', re: /(?<!\d)(?:\d{4}[\s]\d{6}|\d{10})(?!\d)/g, prefix: 'PASP' },
     { id: 'INN', re: /(?<!\d)(?:\d{10}|\d{12})(?!\d)/g, prefix: 'INN' },
     { id: 'SNILS', re: /(?<!\d)\d{3}-\d{3}-\d{3}\s\d{2}(?!\d)/g, prefix: 'SNILS' },
-    { id: 'IP', re: /(?<!\d)(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)(?!\d)/g, prefix: 'IP' },
     { id: 'CARD', re: /(?<!\d)\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}(?!\d)/g, prefix: 'CARD' },
-    { id: 'ACCOUNT', re: /(?<!\d)[43]\d{19}(?!\d)/g, prefix: 'ACC' },
-    { id: 'JWT', re: /eyJ[A-Za-z0-9-_]+\.eyJ[A-Za-z0-9-_]+\.[A-Za-z0-9-._+/]*/g, prefix: 'TOKEN' }
+    { id: 'ACC', re: /(?<!\d)(?:407|408|423|301)\d{17}(?!\d)/g, prefix: 'ACC' },
+    { id: 'IP', re: /\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b/g, prefix: 'IP' }
   ];
 
   let currentFile = null;
   let processedBlob = null;
-  let changeLog = [];
   let maskMap = new Map();
+  let logs = [];
 
-  // --- ЛОГИКА МАСКИРОВАНИЯ ---
-  function applyMasking(text) {
-    if (!text) return text;
+  // --- ЯДРО МАСКИРОВАНИЯ ---
+  function maskText(text) {
+    if (!text || typeof text !== 'string') return text;
     let matches = [];
 
-    // Применяем встроенные паттерны
+    // 1. Сбор совпадений
     PATTERNS.forEach(p => {
-      let m;
-      p.re.lastIndex = 0;
+      let m; p.re.lastIndex = 0;
       while ((m = p.re.exec(text)) !== null) {
         matches.push({ start: m.index, end: m.index + m[0].length, val: m[0], prefix: p.prefix });
       }
     });
 
-    // Применяем кастомный regex
-    const customStr = document.getElementById('customRegex').value;
-    if (customStr) {
+    // 2. Свой Regex
+    const custom = document.getElementById('customRegex').value;
+    if (custom) {
       try {
-        const cr = new RegExp(customStr, 'g');
+        const cr = new RegExp(custom, 'g');
         let m;
         while ((m = cr.exec(text)) !== null) {
           matches.push({ start: m.index, end: m.index + m[0].length, val: m[0], prefix: 'CUST' });
@@ -205,25 +195,21 @@
 
     if (matches.length === 0) return text;
 
-    // Сортируем: сначала самые длинные вхождения, потом по позиции
+    // 3. Разрешение конфликтов (перекрытия)
     matches.sort((a, b) => (b.end - b.start) - (a.end - a.start) || a.start - b.start);
-
-    // Убираем пересечения
     const finalMatches = [];
-    const usedIndices = new Set();
+    const used = new Set();
 
     matches.forEach(m => {
       let overlap = false;
-      for (let i = m.start; i < m.end; i++) {
-        if (usedIndices.has(i)) { overlap = true; break; }
-      }
+      for (let i = m.start; i < m.end; i++) if (used.has(i)) overlap = true;
       if (!overlap) {
-        for (let i = m.start; i < m.end; i++) usedIndices.add(i);
+        for (let i = m.start; i < m.end; i++) used.add(i);
         finalMatches.push(m);
       }
     });
 
-    // Заменяем с конца, чтобы не съехали индексы
+    // 4. Замена
     finalMatches.sort((a, b) => b.start - a.start);
     let result = text;
     finalMatches.forEach(m => {
@@ -231,10 +217,9 @@
       if (maskMap.has(m.val)) {
         mask = maskMap.get(m.val);
       } else {
-        const id = (maskMap.size + 1).toString().padStart(3, '0');
-        mask = `${m.prefix}_${id}`;
+        mask = `${m.prefix}_${(maskMap.size + 1).toString().padStart(3, '0')}`;
         maskMap.set(m.val, mask);
-        changeLog.push({ o: m.val, m: mask });
+        logs.push({ o: m.val, m: mask });
       }
       result = result.slice(0, m.start) + mask + result.slice(m.end);
     });
@@ -242,98 +227,91 @@
     return result;
   }
 
-  // --- ОБРАБОТКА ФАЙЛОВ ---
-  async function processFile() {
-    if (!currentFile) return showToast("Сначала выберите файл");
+  // --- ОБРАБОТКА ФОРМАТОВ ---
+  async function runProcessing() {
+    if (!currentFile) return alert("Файл не выбран");
     
     const startTime = Date.now();
-    changeLog = [];
-    maskMap.clear();
+    maskMap.clear(); logs = [];
     const status = document.getElementById('statusMsg');
-    status.innerHTML = "🔄 Обработка... Пожалуйста, подождите.";
+    status.innerText = "⏳ Идет анализ и маскирование...";
 
     const ext = currentFile.name.split('.').pop().toLowerCase();
 
     try {
-      if (ext === 'docx') {
-        processedBlob = await processDocx(currentFile);
-      } else if (ext === 'xlsx') {
-        processedBlob = await processXlsx(currentFile);
+      if (['docx', 'xlsx'].includes(ext)) {
+        processedBlob = await processOfficeFile(currentFile, ext);
       } else {
-        // Текстовые форматы
         const text = await currentFile.text();
-        const result = applyMasking(text);
+        const result = maskText(text);
         processedBlob = new Blob([result], { type: 'text/plain;charset=utf-8' });
       }
 
       // Обновление UI
-      document.getElementById('statTotal').innerText = changeLog.length;
-      document.getElementById('statUniq').innerText = maskMap.size;
-      document.getElementById('statTime').innerText = Date.now() - startTime;
+      document.getElementById('stTotal').innerText = logs.length;
+      document.getElementById('stUniq').innerText = maskMap.size;
+      document.getElementById('stTime').innerText = Date.now() - startTime;
       document.getElementById('resultCard').classList.add('show');
-      status.innerHTML = "✅ Файл успешно обработан.";
+      status.innerText = "✅ Обработка завершена успешно.";
 
-      const list = document.getElementById('logList');
-      list.innerHTML = changeLog.slice(0, 100).map(i => `
+      const logList = document.getElementById('logList');
+      logList.innerHTML = logs.slice(0, 150).map(l => `
         <div class="change-line">
-          <span class="c-orig">${i.o}</span> ➡️ <span class="c-mask">${i.m}</span>
+          <span class="c-orig">${l.o}</span> ➡️ <span class="c-mask">${l.m}</span>
         </div>
-      `).join('');
+      `).join('') + (logs.length > 150 ? '<div style="text-align:center; padding:10px">...и еще ' + (logs.length-150) + ' замен</div>' : '');
 
     } catch (err) {
       console.error(err);
-      status.innerHTML = "❌ Ошибка при обработке файла.";
+      status.innerText = "❌ Ошибка: " + err.message;
     }
   }
 
-  // --- СПЕЦИАЛЬНАЯ ОБРАБОТКА XML (Office) ---
-  async function processDocx(file) {
+  // --- УЛУЧШЕННЫЙ АЛГОРИТМ ДЛЯ OFFICE (ZIP) ---
+  async function processOfficeFile(file, ext) {
     const zip = await JSZip.loadAsync(file);
-    const contentFiles = ['word/document.xml', 'word/header1.xml', 'word/footer1.xml'];
-    
-    for (const path of contentFiles) {
+    const targets = ext === 'docx' ? 
+      ['word/document.xml', 'word/header1.xml', 'word/footer1.xml', 'word/footnotes.xml'] : 
+      ['xl/sharedStrings.xml'];
+
+    for (const path of targets) {
       if (zip.file(path)) {
         let xml = await zip.file(path).async("string");
-        // Склеиваем содержимое параграфов <w:p>, чтобы не терять слова, разбитые тегами <w:t>
-        xml = xml.replace(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g, (pMatch) => {
-          return pMatch.replace(/(<w:t[^>]*>)(.*?)(<\/w:t>)/g, (tMatch, open, text, close) => {
-            return open + applyMasking(text) + close;
-          });
+        
+        // Маскирование внутри тегов <w:t> (Word) или <t> (Excel)
+        // Использование нежадного поиска для захвата текста между тегами
+        xml = xml.replace(/(<[w:]?t[^>]*>)(.*?)(<\/[w:]?t>)/gs, (match, open, text, close) => {
+          // Декодируем XML сущности перед маскированием (напр. & -> &)
+          const decoded = text.replace(/&/g, '&').replace(/</g, '<').replace(/>/g, '>');
+          const masked = maskText(decoded);
+          // Кодируем обратно
+          const encoded = masked.replace(/&/g, '&').replace(/</g, '<').replace(/>/g, '>');
+          return open + encoded + close;
         });
+        
         zip.file(path, xml);
       }
     }
-    return await zip.generateAsync({type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"});
+
+    return await zip.generateAsync({
+      type: "blob",
+      compression: "DEFLATE",
+      mimeType: file.type
+    });
   }
 
-  async function processXlsx(file) {
-    const zip = await JSZip.loadAsync(file);
-    const sharedStrings = 'xl/sharedStrings.xml';
-    
-    if (zip.file(sharedStrings)) {
-      let xml = await zip.file(sharedStrings).async("string");
-      xml = xml.replace(/(<t[^>]*>)(.*?)(<\/t>)/g, (m, open, text, close) => {
-        return open + applyMasking(text) + close;
-      });
-      zip.file(sharedStrings, xml);
-    }
-    return await zip.generateAsync({type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
-  }
-
-  // --- UI И СОБЫТИЯ ---
+  // --- UI EVENTS ---
   const fileInput = document.getElementById('fileInput');
-  const dropZone = document.getElementById('dropZone');
-
-  fileInput.onchange = (e) => handleFile(e.target.files[0]);
-  
-  function handleFile(file) {
-    if (!file) return;
-    currentFile = file;
-    document.getElementById('fileName').innerText = file.name;
-    document.getElementById('fileInfo').classList.add('show');
-    document.getElementById('statusMsg').innerText = "Файл готов к обработке.";
-    document.getElementById('resultCard').classList.remove('show');
-  }
+  fileInput.onchange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      currentFile = file;
+      document.getElementById('fileName').innerText = file.name;
+      document.getElementById('fileInfo').classList.add('show');
+      document.getElementById('resultCard').classList.remove('show');
+      document.getElementById('statusMsg').innerText = "Файл загружен. Нажмите 'ЗАПУСТИТЬ'.";
+    }
+  };
 
   document.getElementById('fileRemove').onclick = () => {
     currentFile = null;
@@ -341,15 +319,13 @@
     fileInput.value = "";
   };
 
-  document.getElementById('btnProcess').onclick = processFile;
+  document.getElementById('btnProcess').onclick = runProcessing;
 
   document.getElementById('btnDownload').onclick = () => {
-    const url = URL.createObjectURL(processedBlob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = "MASKED_" + currentFile.name;
+    a.href = URL.createObjectURL(processedBlob);
+    a.download = "PROTECTED_" + currentFile.name;
     a.click();
-    URL.revokeObjectURL(url);
   };
 
   document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -360,14 +336,6 @@
       document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
     };
   });
-
-  function showToast(msg) {
-    const t = document.createElement('div');
-    t.className = 'toast';
-    t.innerText = msg;
-    document.body.appendChild(t);
-    setTimeout(() => t.remove(), 3000);
-  }
 </script>
 </body>
 </html>
