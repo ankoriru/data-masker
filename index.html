@@ -605,75 +605,59 @@ let processedBlob = null;
 let changeLog = [];
 
 // ─── PATTERN LIBRARY ─── //
-// NOTE:  does NOT work with Cyrillic in JS — use lookahead/lookbehind instead
-const CYR_BOUND_L = '(?<![а-яёА-ЯЁa-zA-Z0-9])';
-const CYR_BOUND_R = '(?![а-яёА-ЯЁa-zA-Z0-9])';
-
+// NOTE: \b does NOT work with Cyrillic in JS — use lookahead/lookbehind instead
 const PATTERNS = {
   // ── Personal ──
-  // Email — no , use negative lookahead
   EMAIL: {
     re: /[a-zA-Z0-9._%+\-]{1,64}@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g,
     cat:'personal', prefix:'EMAIL'
   },
-  // Phone RU — extended: +7/8/7 prefix or bare 10-digit
   PHONE: {
     re: /(?:(?:\+7|8|7)[\s\-]?\(?[489]\d{2}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2})|(?<!\d)(?:[489]\d{2})[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}(?!\d)/g,
     cat:'personal', prefix:'PHONE'
   },
-  // ФИО — 2 or 3 Cyrillic words (Cyrillic  fix)
   FULL_NAME: {
     re: /(?<![а-яёА-ЯЁ])[А-ЯЁ][а-яё]{1,20}(?:\s+[А-ЯЁ][а-яё]{1,20}){1,2}(?![а-яёА-ЯЁ])/g,
     cat:'personal', prefix:'NAME'
   },
-  // Passport RU: XXXX XXXXXX or XXXXXXXXXX
   PASSPORT: {
     re: /(?<!\d)(?:\d{4}[\s\-]\d{6}|\d{10})(?!\d)/g,
     cat:'personal', prefix:'PASP'
   },
-  // СНИЛС: XXX-XXX-XXX XX
   SNILS: {
-    re: /(?<!\d)\d{3}-\d{3}-\d{3}[\s]\d{2}(?!\d)/g,
+    re: /(?<!\d)\d{3}-\d{3}-\d{3}[ ]\d{2}(?!\d)/g,
     cat:'personal', prefix:'SNILS'
   },
-  // ИНН физ. лица (12 цифр) с меткой или без
   INN_PERS: {
     re: /(?:ИНН|инн)[:\s]*\d{12}|(?<!\d)\d{12}(?!\d)/gi,
     cat:'personal', prefix:'INN_P'
   },
-  // Адреса РФ
   ADDRESS: {
-    re: /(?:г(?ород)?[.\s]|ул(?ица)?[.\s]|пр(?оспект)?[.\s]|пер(?еулок)?[.\s]|д(?ом)?[.\s]|кв[.\s])[а-яёА-ЯЁ\w\s.,\-№]{3,60}(?:\d+[а-яА-Я]?(?:\/\d+)?)?/gi,
+    re: /(?:г\.?|ул\.?|пр\.?|пер\.?|д\.?|кв\.?) [а-яёА-ЯЁ\w .,\-№]{3,60}/gi,
     cat:'personal', prefix:'ADDR'
   },
-  // Дата рождения (когда явно указана)
   BIRTHDATE: {
-    re: /(?:дата\s*рождения|д\.?\s*р\.?|born|birthday)[:\s]*\d{1,2}[.\-\/]\d{1,2}[.\-\/]\d{2,4}/gi,
+    re: /(?:дата рождения|д\.р\.|born|birthday)[ :]*\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4}/gi,
     cat:'personal', prefix:'BDATE'
   },
 
   // ── Commercial ──
-  // ИНН организации (10 цифр)
   INN_ORG: {
     re: /(?:ИНН|инн)[:\s]*\d{10}(?!\d)|(?<!\d)\d{10}(?!\d)(?=[^\d]|$)/gi,
     cat:'commercial', prefix:'INN'
   },
-  // ОГРН (13 или 15 цифр)
   OGRN: {
     re: /(?:ОГРН|огрн)[:\s]*\d{13,15}|(?<!\d)[135]\d{12}(?!\d)|(?<!\d)[356]\d{14}(?!\d)/gi,
     cat:'commercial', prefix:'OGRN'
   },
-  // БИК (9 цифр, начинается на 04)
   BIC: {
     re: /(?:БИК|бик)[:\s]*\d{9}|(?<!\d)04\d{7}(?!\d)/gi,
     cat:'commercial', prefix:'BIC'
   },
-  // Расчётный счёт (20 цифр)
   ACCOUNT: {
     re: /(?<!\d)\d{20}(?!\d)/g,
     cat:'commercial', prefix:'ACC'
   },
-  // Суммы с валютой
   AMOUNT: {
     re: /(?<!\w)\d[\d\s]{1,14}\d\s*(?:руб(?:лей|\.)?|₽|RUB|USD|EUR|\$|€)/gi,
     cat:'commercial', prefix:'AMOUNT'
@@ -693,26 +677,20 @@ const PATTERNS = {
     cat:'technical', prefix:'MAC'
   },
   API_KEY: {
-    re: /(?:api[_\-]?key|apikey|access[_\-]?token|bearer|x-api-key)\s*[=:\s]+["']?[A-Za-z0-9\-_.~+\/]{16,}["']?/gi,
+    re: /(?:api[-_]?key|apikey|access[-_]?token|bearer)\s*[=:]\s*["']?[A-Za-z0-9\-_.~+/]{16,}["']?/gi,
     cat:'technical', prefix:'APIKEY'
   },
   PASSWORD: {
-    re: /(?:password|passwd|pwd|secret|pass|credentials?)\s*[=:]\s*["']?[^\s"',;<>
-]{4,}["']?/gi,
+    re: /(?:password|passwd|pwd|secret|pass|credentials?)\s*[=:]\s*["']?[^\s"',;<>\r\n]{4,}["']?/gi,
     cat:'technical', prefix:'PWD'
   },
   CONN_STR: {
-    re: /(?:Server|Data\s*Source|Hostname?|Host)\s*=\s*[^\s;,"'
-]{3,}/gi,
+    re: /(?:Server|Data Source|Hostname?|Host)\s*=\s*[^\s;,"'\r\n]{3,}/gi,
     cat:'technical', prefix:'HOST'
   },
   TOKEN_JWT: {
-    re: /eyJ[A-Za-z0-9\-_]+\.eyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_.+\/]*/g,
+    re: /eyJ[A-Za-z0-9\-_]+\.eyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_.+/]*/g,
     cat:'technical', prefix:'JWT'
-  },
-  PRIVATE_KEY: {
-    re: /-----BEGIN[A-Z ]+PRIVATE KEY-----[\s\S]+?-----END[A-Z ]+PRIVATE KEY-----/g,
-    cat:'technical', prefix:'PRIVKEY'
   },
 
   // ── SAP ──
@@ -731,22 +709,17 @@ const PATTERNS = {
 
   // ── Documentum ──
   DCT_OBJID:  { re: /r_object_id\s*=\s*["']?[0-9a-f]{16}["']?/gi, cat:'documentum', prefix:'OBJID' },
-  DCT_WF:     { re: /workflow[_\-]?id\s*=\s*["']?[\w\-]{6,}["']?/gi, cat:'documentum', prefix:'WFID' },
+  DCT_WF:     { re: /workflow[-_]?id\s*=\s*["']?[\w\-]{6,}["']?/gi, cat:'documentum', prefix:'WFID' },
 
   // ── Web server ──
-  WEB_UA:     { re: /(?:User-Agent|useragent):\s*[^
-]+/gi, cat:'webserver', prefix:'UA' },
-  WEB_COOKIE: { re: /(?:Cookie|Set-Cookie):\s*[^
-]+/gi,    cat:'webserver', prefix:'COOKIE' },
-  WEB_REFERER:{ re: /Referer:\s*https?:\/\/[^\s
-]+/gi,     cat:'webserver', prefix:'REFERER' },
-  WEB_IP_LOG: { re: /^(?:\d{1,3}\.){3}\d{1,3}(?=\s+-\s+-)/gm, cat:'webserver', prefix:'IP' },
+  WEB_UA:     { re: /(?:User-Agent|useragent):\s*[^\r\n]+/gi, cat:'webserver', prefix:'UA' },
+  WEB_COOKIE: { re: /(?:Cookie|Set-Cookie):\s*[^\r\n]+/gi,    cat:'webserver', prefix:'COOKIE' },
+  WEB_REFERER:{ re: /Referer:\s*https?:\/\/[^\s\r\n]+/gi,     cat:'webserver', prefix:'REFERER' },
+  WEB_IP_LOG: { re: /^(?:\d{1,3}\.){3}\d{1,3}(?=\s)/gm,      cat:'webserver', prefix:'IP' },
 
   // ── Database ──
-  DB_PWD:     { re: /(?:Password|Pwd)\s*=\s*[^;,"'\s
-]+/gi,  cat:'db', prefix:'DBPWD' },
-  DB_UID:     { re: /(?:User\s*Id|UID|User)\s*=\s*[^;,"'\s
-]+/gi, cat:'db', prefix:'DBUID' },
+  DB_PWD:     { re: /(?:Password|Pwd)\s*=\s*[^;,"'\s\r\n]+/gi,  cat:'db', prefix:'DBPWD' },
+  DB_UID:     { re: /(?:User Id|UID|User)\s*=\s*[^;,"'\s\r\n]+/gi, cat:'db', prefix:'DBUID' },
 };
 
 // Date/status patterns — these values should NOT be masked
