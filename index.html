@@ -1,0 +1,2432 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Маскирование документов и лог файлов</title>
+    <script src="vendor/tailwindcss.js"></script>
+    <script src="vendor/jszip.min.js"></script>
+    <script src="vendor/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="vendor/inter-font.css">
+    <link rel="icon" href="favicon.ico" type="image/x-icon">
+	<style>
+        body { font-family: 'Inter', sans-serif; background: #0f172a; color: #e2e8f0; }
+        .glass { background: rgba(30, 41, 59, 0.8); backdrop-filter: blur(12px); border: 1px solid rgba(71, 85, 105, 0.4); }
+        .glass-light { background: rgba(51, 65, 85, 0.5); border: 1px solid rgba(71, 85, 105, 0.3); }
+        .btn-primary { background: linear-gradient(135deg, #6366f1, #8b5cf6); transition: all 0.3s ease; }
+        .btn-primary:hover { background: linear-gradient(135deg, #818cf8, #a78bfa); transform: translateY(-1px); box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4); }
+        .btn-danger { background: linear-gradient(135deg, #ef4444, #dc2626); transition: all 0.3s ease; }
+        .btn-success { background: linear-gradient(135deg, #10b981, #059669); transition: all 0.3s ease; }
+        .drop-zone { border: 2px dashed #475569; transition: all 0.3s ease; }
+        .drop-zone.drag-over { border-color: #6366f1; background: rgba(99, 102, 241, 0.1); }
+        .file-card { transition: all 0.3s ease; }
+        .file-card:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0,0,0,0.3); }
+        .tab-active { color: #a78bfa; border-bottom: 2px solid #a78bfa; }
+        .toggle-on { background: #6366f1; }
+        .toggle-off { background: #374151; }
+        .stat-card { background: linear-gradient(135deg, rgba(99,102,241,0.1), rgba(139,92,246,0.1)); }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #6366f1; }
+        .fade-in { animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .modal-overlay { background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); }
+        .notification { animation: slideIn 0.3s ease-out; }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        .diff-old { background: rgba(239, 68, 68, 0.15); color: #fca5a5; text-decoration: line-through; padding: 1px 4px; border-radius: 3px; }
+        .diff-new { background: rgba(34, 197, 94, 0.15); color: #86efac; padding: 1px 4px; border-radius: 3px; }
+        .pulse-dot { animation: pulse 2s infinite; }
+        .drop-zone-list { border: 2px dashed #059669; transition: all 0.3s ease; }
+        .drop-zone-list.drag-over { border-color: #10b981; background: rgba(16, 185, 129, 0.1); }
+        .list-file-card { background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(5, 150, 105, 0.1)); border: 1px solid rgba(16, 185, 129, 0.3); }
+        .list-badge { background: linear-gradient(135deg, #10b981, #059669); }
+        .template-list-active { border: 2px solid #10b981; background: rgba(16, 185, 129, 0.1); }
+        .template-active { border: 2px solid #6366f1; background: rgba(99, 102, 241, 0.15); }
+        .template-multi-active { border: 2px solid #a78bfa; background: rgba(167, 139, 250, 0.15); }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .info-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; }
+        .file-info-card { display: flex; align-items: center; gap: 10px; background: rgba(51, 65, 85, 0.4); border: 1px solid rgba(71, 85, 105, 0.3); border-radius: 8px; padding: 8px 12px; }
+        .file-info-card .icon { font-size: 20px; }
+        .file-info-card .name { font-size: 12px; font-weight: 600; color: #e2e8f0; }
+        .file-info-card .desc { font-size: 10px; color: #94a3b8; }
+        .collapse-content { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; }
+        .collapse-content.open { max-height: 600px; }
+        .rotate-icon { transition: transform 0.3s ease; }
+        .rotate-icon.rotated { transform: rotate(180deg); }
+        .param-card { background: rgba(51, 65, 85, 0.4); border: 1px solid rgba(71, 85, 105, 0.3); border-radius: 10px; padding: 16px; }
+        .param-card h4 { color: #e2e8f0; font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+        .param-card p { color: #94a3b8; font-size: 12px; line-height: 1.5; }
+        .param-card ul { color: #94a3b8; font-size: 12px; line-height: 1.6; margin-top: 6px; padding-left: 16px; }
+        .param-card ul li::marker { color: #6366f1; }
+        .processing-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.9);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            backdrop-filter: blur(8px);
+        }
+        .processing-overlay.active {
+            display: flex;
+        }
+        .spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid #475569;
+            border-top: 4px solid #6366f1;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .progress-bar-container {
+            width: 300px;
+            height: 8px;
+            background: #1e293b;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 20px;
+        }
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #6366f1, #8b5cf6);
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+        .col-tag { display: inline-flex; align-items: center; gap: 4px; background: rgba(99,102,241,0.2); border: 1px solid rgba(99,102,241,0.3); border-radius: 6px; padding: 4px 10px; font-size: 12px; color: #c4b5fd; }
+        .col-tag .remove { cursor: pointer; color: #94a3b8; font-weight: bold; }
+        .col-tag .remove:hover { color: #ef4444; }
+        .detected-type-tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+        .detected-type-company { background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+        .detected-type-person { background: rgba(59, 130, 246, 0.2); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); }
+        .detected-type-login { background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+        .col-tag-excluded { display: inline-flex; align-items: center; gap: 4px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 6px; padding: 4px 10px; font-size: 12px; color: #fca5a5; }
+        .col-tag-excluded .remove { cursor: pointer; color: #94a3b8; font-weight: bold; }
+        .col-tag-excluded .remove:hover { color: #ef4444; }
+        .version-badge { position: fixed; top: 12px; right: 16px; z-index: 60; background: rgba(30, 41, 59, 0.9); backdrop-filter: blur(8px); border: 1px solid rgba(99, 102, 241, 0.4); border-radius: 8px; padding: 4px 12px; font-size: 11px; font-weight: 700; color: #a78bfa; letter-spacing: 0.05em; }
+        .step-description { color: #94a3b8; font-size: 13px; margin-top: 8px; min-height: 20px; }
+        .eta-display { color: #fbbf24; font-size: 12px; margin-top: 6px; font-weight: 500; }
+    </style>
+<base target="_blank">
+<base target="_blank">
+</head>
+<body class="min-h-screen">
+
+    <!-- Version Badge -->
+    <div class="version-badge">v. 3.5</div>
+
+    <!-- Processing Overlay - HIDDEN BY DEFAULT -->
+    <div id="processingOverlay" class="processing-overlay">
+        <div class="spinner"></div>
+        <p class="text-white text-lg font-semibold mt-4">Обработка файлов...</p>
+        <p id="processingFile" class="text-slate-400 text-sm mt-2"></p>
+        <p id="processingStep" class="step-description"></p>
+        <p id="processingETA" class="eta-display"></p>
+        <div class="progress-bar-container">
+            <div id="progressBar" class="progress-bar-fill" style="width: 0%"></div>
+        </div>
+        <p id="progressText" class="text-slate-500 text-xs mt-2">0%</p>
+    </div>
+
+    <!-- Main App -->
+    <div class="max-w-7xl mx-auto px-4 py-6">
+        <!-- Header -->
+        <header class="text-center mb-8 fade-in">
+            <h1 class="text-3xl md:text-4xl font-bold bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent mb-2">
+                Маскирование документов и лог файлов
+            </h1>
+            <p class="text-slate-400 text-sm md:text-base">Обфускация персональной, коммерческой и технической информации в корпоративных документах</p>
+        </header>
+
+        <!-- File Types Info - Collapsed by default -->
+        <div class="glass rounded-xl mb-6 fade-in overflow-hidden">
+            <button onclick="toggleFileInfo()" class="w-full flex items-center justify-between p-4 hover:bg-slate-700/30 transition-colors">
+                <h3 class="text-sm font-semibold text-slate-300">Поддерживаемые форматы файлов</h3>
+                <svg id="fileInfoArrow" class="w-5 h-5 text-slate-400 rotate-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                </svg>
+            </button>
+            <div id="fileInfoContent" class="collapse-content">
+                <div class="p-4 pt-0">
+                    <div class="info-grid">
+                        <div class="file-info-card"><span class="icon">📄</span><div><div class="name">DOCX</div><div class="desc">Word документы · текст, таблицы, колонтитулы</div></div></div>
+                        <div class="file-info-card"><span class="icon">📊</span><div><div class="name">XLSX</div><div class="desc">Excel таблицы · ячейки, листы, формулы</div></div></div>
+						<div class="file-info-card"><span class="icon">📊</span><div><div class="name">XLSB</div><div class="desc">Двоичный формат книги Excel, бинарном данные</div></div></div>
+                        <div class="file-info-card"><span class="icon">📝</span><div><div class="name">TXT</div><div class="desc">Текстовые файлы · plain text, log</div></div></div>
+                        <div class="file-info-card"><span class="icon">📋</span><div><div class="name">CSV</div><div class="desc">Табличные данные · разделители</div></div></div>
+                        <div class="file-info-card"><span class="icon">🔗</span><div><div class="name">JSON</div><div class="desc">Структурированные данные</div></div></div>
+                        <div class="file-info-card"><span class="icon">📰</span><div><div class="name">XML</div><div class="desc">Разметочные данные · теги, атрибуты</div></div></div>
+                        <div class="file-info-card"><span class="icon">📋</span><div><div class="name">LOG</div><div class="desc">Файлы журналов · системные логи</div></div></div>
+                        <div class="file-info-card"><span class="icon">🗃️</span><div><div class="name">SQL</div><div class="desc">SQL-запросы · данные</div></div></div>
+                        <div class="file-info-card"><span class="icon">⚙️</span><div><div class="name">YAML / YML</div><div class="desc">Конфигурационные файлы</div></div></div>
+                        <div class="file-info-card"><span class="icon">🔧</span><div><div class="name">INI</div><div class="desc">Конфигурационные файлы</div></div></div>
+                        <div class="file-info-card"><span class="icon">📑</span><div><div class="name">MD</div><div class="desc">Markdown разметка</div></div></div>
+                    </div>
+                    <div class="text-center mt-3">
+                        <span class="text-xs text-slate-500">Макс. размер файла: 30 МБ · Макс. кол-во: 10 файлов · Удаление метаданных по умолчанию включено</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="flex gap-2 mb-6 border-b border-slate-700 overflow-x-auto">
+            <button onclick="switchTab('upload')" id="tab-upload" class="tab-active px-4 py-3 text-sm font-medium whitespace-nowrap transition-colors hover:text-purple-300">
+                📁 Загрузка файлов
+            </button>
+            <button onclick="switchTab('listfiles')" id="tab-listfiles" class="px-4 py-3 text-sm font-medium text-slate-400 whitespace-nowrap transition-colors hover:text-purple-300">
+                📋 Файлы-списки
+            </button>
+            <button onclick="switchTab('columnsettings')" id="tab-columnsettings" class="px-4 py-3 text-sm font-medium text-slate-400 whitespace-nowrap transition-colors hover:text-purple-300">
+                📐 Колонки
+            </button>
+            <button onclick="switchTab('settings')" id="tab-settings" class="px-4 py-3 text-sm font-medium text-slate-400 whitespace-nowrap transition-colors hover:text-purple-300">
+                ⚙️ Настройки
+            </button>
+            <button onclick="switchTab('templates')" id="tab-templates" class="px-4 py-3 text-sm font-medium text-slate-400 whitespace-nowrap transition-colors hover:text-purple-300">
+                📋 Шаблоны
+            </button>
+            <button onclick="switchTab('preview')" id="tab-preview" class="px-4 py-3 text-sm font-medium text-slate-400 whitespace-nowrap transition-colors hover:text-purple-300">
+                🔍 Предпросмотр
+            </button>
+        </div>
+
+        <!-- Upload Tab -->
+        <div id="panel-upload" class="fade-in">
+            <div id="dropZone" class="drop-zone rounded-2xl p-8 text-center cursor-pointer mb-6" onclick="document.getElementById('fileInput').click()">
+                <input type="file" id="fileInput" class="hidden" multiple accept=".docx,.xlsx,.xlsb,.txt,.csv,.json,.xml,.log,.sql,.yaml,.yml,.ini,.md" onchange="handleFiles(this.files)">
+                <svg class="w-16 h-16 mx-auto text-indigo-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                </svg>
+                <p class="text-lg font-medium text-slate-300">Перетащите файлы сюда или нажмите для выбора</p>
+                <p class="text-slate-500 text-sm mt-2">До 10 файлов · Макс. размер: 100 МБ</p>
+            </div>
+
+            <div id="fileCounter" class="hidden flex justify-between items-center mb-4">
+                <span class="text-sm text-slate-400">Файлов: <span id="fileCount" class="text-indigo-400 font-bold">0</span>/10</span>
+                <button onclick="clearAllFiles()" class="text-sm text-red-400 hover:text-red-300 transition">Очистить все</button>
+            </div>
+
+            <div id="fileList" class="grid gap-3 mb-6"></div>
+
+            <div id="processSection" class="hidden text-center mt-6">
+                <button onclick="processAllFiles()" class="btn-primary text-white font-bold py-4 px-12 rounded-xl text-lg shadow-lg">
+                    🛡️ Обфусцировать файлы
+                </button>
+                <p id="processStatus" class="text-slate-400 text-sm mt-3"></p>
+            </div>
+
+            <!-- Results - NO PASSWORD PROTECTION -->
+            <div id="resultsSection" class="hidden mt-8">
+                <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                    <span class="text-green-400">✅</span> Результаты обработки
+                </h2>
+                <div id="resultsList" class="grid gap-4"></div>
+                <div class="mt-6 flex justify-center gap-4 flex-wrap">
+                    <button onclick="downloadAllFiles()" class="btn-success text-white font-semibold py-3 px-8 rounded-lg">📥 Скачать все</button>
+                    <button onclick="downloadReport()" class="bg-slate-700 hover:bg-slate-600 text-slate-200 font-semibold py-3 px-8 rounded-lg transition">📊 Отчёт</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- List Files Tab -->
+        <div id="panel-listfiles" class="hidden fade-in">
+            <div class="mb-6">
+                <h2 class="text-xl font-bold text-white mb-2">📋 Файлы-списки для маскирования</h2>
+                <p class="text-slate-400 text-sm">Загрузите TXT-файлы со списками данных, которые должны быть замаскированы в обрабатываемых документах. Каждая строка файла — отдельное значение для поиска и замены.</p>
+            </div>
+
+            <div id="listDropZone" class="drop-zone-list rounded-2xl p-8 text-center cursor-pointer mb-6" onclick="document.getElementById('listFileInput').click()">
+                <input type="file" id="listFileInput" class="hidden" multiple accept=".txt" onchange="handleListFiles(this.files)">
+                <svg class="w-16 h-16 mx-auto text-emerald-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+                <p class="text-lg font-medium text-slate-300">Перетащите файлы-списки сюда или нажмите для выбора</p>
+                <p class="text-slate-500 text-sm mt-2">Только .txt файлы · До 10 файлов · По одному значению на строку</p>
+            </div>
+
+            <div id="listFileCounter" class="hidden flex justify-between items-center mb-4">
+                <span class="text-sm text-slate-400">Файлов-списков: <span id="listFileCount" class="text-emerald-400 font-bold">0</span>/10</span>
+                <button onclick="clearAllListFiles()" class="text-sm text-red-400 hover:text-red-300 transition">Очистить все</button>
+            </div>
+
+            <div id="listFileList" class="grid gap-3 mb-6"></div>
+
+            <div id="listFilesInfo" class="hidden glass rounded-xl p-5 mb-6">
+                <h3 class="text-lg font-bold text-white mb-3">📊 Информация о загруженных списках</h3>
+                <div id="listFilesStats" class="grid grid-cols-1 md:grid-cols-3 gap-4"></div>
+            </div>
+
+            <div class="glass rounded-xl p-5">
+                <h3 class="text-lg font-bold text-white mb-3">💡 Как использовать файлы-списки</h3>
+                <div class="space-y-3 text-sm text-slate-400">
+                    <p><span class="text-emerald-400">1.</span> Создайте TXT-файл и добавьте в него значения для маскирования (по одному на строку)</p>
+                    <p><span class="text-emerald-400">2.</span> Загрузите файл в этот раздел — данные будут сохранены в памяти приложения</p>
+                    <p><span class="text-emerald-400">3.</span> Перейдите во вкладку <strong>"Шаблоны"</strong> и выберите шаблон <strong>"Маскирование по списку"</strong></p>
+                    <p><span class="text-emerald-400">4.</span> Загрузите целевые файлы и запустите обработку — все совпадения из списков будут замаскированы</p>
+                </div>
+                <div class="mt-4 p-3 bg-emerald-900/20 border border-emerald-500/30 rounded-lg">
+                    <p class="text-emerald-300 text-sm"><strong>💡 Совет:</strong> Вы можете загрузить до 10 файлов-списков. Например: список ФИО, список email, список телефонов и т.д.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Column Settings Tab -->
+        <div id="panel-columnsettings" class="hidden fade-in">
+            <div class="mb-6">
+                <h2 class="text-xl font-bold text-white mb-2">📐 Пользовательские названия столбцов</h2>
+                <p class="text-slate-400 text-sm">Добавьте названия столбцов для более точной обфускации. При обнаружении этих названий в заголовках столбцов (строка 1) — весь столбец будет маскироваться по соответствующему шаблону.</p>
+            </div>
+
+            <!-- Commercial Secret Column Names -->
+            <div class="glass rounded-xl p-6 mb-6">
+                <h3 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                    <span class="text-amber-400">🏢</span> Коммерческая тайна — названия столбцов
+                </h3>
+                <div class="param-card mb-4">
+                    <h4>Наименования контрагентов и ЮЛ</h4>
+                    <p>Следующие заголовки столбцов автоматически распознаются для маскирования названий организаций:</p>
+                    <ul>
+                        <li>Наименование экспедитора</li>
+                        <li>Наименование получателя</li>
+                        <li>Наименование заказчика</li>
+                        <li>Наименование грузоотправителя</li>
+                        <li>Наименование грузополучателя</li>
+                        <li>Наименование завода-производителя</li>
+                        <li>Наименование завода</li>
+                        <li>Краткий текст материала</li>
+                        <li>Резерв клиента</li>
+                    </ul>
+                </div>
+                <div class="mb-3">
+                    <label class="block text-sm text-slate-400 mb-2">Добавить название столбца (Коммерческая тайна)</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="customColCommercial" placeholder="Например: Наименование поставщика" class="flex-1 bg-slate-700/50 border border-slate-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" onkeypress="if(event.key==='Enter')addCustomColumn('commercial')">
+                        <button onclick="addCustomColumn('commercial')" class="btn-primary text-white px-4 py-2 rounded-lg text-sm font-semibold">Добавить</button>
+                    </div>
+                </div>
+                <div id="customCommercialColumnsList" class="flex flex-wrap gap-2 mb-4"></div>
+                <div id="detectedCommercialCols" class="hidden">
+                    <h4 class="text-sm font-semibold text-amber-400 mb-2">🔍 Обнаруженные при самообучении (Коммерческая тайна):</h4>
+                    <div id="detectedCommercialColsList" class="flex flex-wrap gap-2"></div>
+                </div>
+            </div>
+
+            <!-- Personal Data Column Names -->
+            <div class="glass rounded-xl p-6 mb-6">
+                <h3 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                    <span class="text-blue-400">👤</span> Персональные данные — названия столбцов
+                </h3>
+                <div class="param-card mb-4">
+                    <h4>Логины и ФИО пользователей</h4>
+                    <p>Следующие заголовки столбцов автоматически распознаются для маскирования логинов и ФИО:</p>
+                    <ul>
+                        <li>Пользователь / login</li>
+                        <li>ФИО / Фамилия</li>
+                    </ul>
+                    <p class="mt-2">Примеры логинов: <code class="bg-slate-700 px-1 rounded">BALANDINAIY</code>, <code class="bg-slate-700 px-1 rounded">IVANOVPS</code></p>
+                </div>
+                <div class="mb-3">
+                    <label class="block text-sm text-slate-400 mb-2">Добавить название столбца (Персональные данные)</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="customColPersonal" placeholder="Например: Ответственный сотрудник" class="flex-1 bg-slate-700/50 border border-slate-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" onkeypress="if(event.key==='Enter')addCustomColumn('personal')">
+                        <button onclick="addCustomColumn('personal')" class="btn-primary text-white px-4 py-2 rounded-lg text-sm font-semibold">Добавить</button>
+                    </div>
+                </div>
+                <div id="customPersonalColumnsList" class="flex flex-wrap gap-2 mb-4"></div>
+                <div id="detectedPersonalCols" class="hidden">
+                    <h4 class="text-sm font-semibold text-blue-400 mb-2">🔍 Обнаруженные при самообучении (Персональные данные):</h4>
+                    <div id="detectedPersonalColsList" class="flex flex-wrap gap-2"></div>
+                </div>
+            </div>
+
+            <!-- Excluded Columns (Whitelist) -->
+            <div class="glass rounded-xl p-6 mb-6">
+                <h3 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                    <span class="text-red-400">🛡️</span> Исключаемые столбцы (белый список)
+                </h3>
+                <div class="param-card mb-4">
+                    <h4>Столбцы, которые НЕ будут маскироваться</h4>
+                    <p>Укажите названия столбцов, данные в которых должны оставаться без изменений. При обнаружении этих названий в заголовках — весь столбец пропускается при маскировании.</p>
+                    <ul>
+                        <li>Работает для Excel (XLSX) файлов</li>
+                        <li>Проверяется по подстроке (регистр неважен)</li>
+                        <li>Исключает как автоопределение по заголовку, так и самообучение по содержимому</li>
+                    </ul>
+                </div>
+                <div class="mb-3">
+                    <label class="block text-sm text-slate-400 mb-2">Добавить столбец в исключения</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="excludedColumnInput" placeholder="Например: ID заказа, Номер договора" class="flex-1 bg-slate-700/50 border border-slate-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" onkeypress="if(event.key==='Enter')addExcludedColumn()">
+                        <button onclick="addExcludedColumn()" class="btn-primary text-white px-4 py-2 rounded-lg text-sm font-semibold">Добавить</button>
+                    </div>
+                </div>
+                <div id="excludedColumnsList" class="flex flex-wrap gap-2"></div>
+                <div id="excludedColsApplied" class="hidden mt-3 p-3 bg-red-900/10 border border-red-500/20 rounded-lg">
+                    <p class="text-red-300 text-xs">⚠️ При следующей обработке XLSX-файлов указанные столбцы будут пропущены</p>
+                </div>
+            </div>
+
+            <!-- Self-learning info -->
+            <div class="glass rounded-xl p-6">
+                <h3 class="text-lg font-bold text-white mb-4">🧠 Алгоритм самообучения</h3>
+                <div class="param-card">
+                    <h4>Как работает автоопределение столбцов</h4>
+                    <p>При обработке Excel-файлов приложение анализирует содержимое ячеек в каждом столбце:</p>
+                    <ul>
+                        <li><strong class="text-amber-400">ЮЛ</strong> — если в ячейках обнаружены названия организаций (ООО, АО, ПАО и др.)</li>
+                        <li><strong class="text-blue-400">ФИО</strong> — если в ячейках обнаружены фамилии и инициалы (Иванов А.А. и др.)</li>
+                        <li><strong class="text-green-400">Логин</strong> — если в ячейках обнаружены логины (BALANDINAIY и др.)</li>
+                    </ul>
+                    <p class="mt-2">При достижении порога совпадений (>30% ячеек) весь столбец автоматически типизируется и маскируется.</p>
+                </div>
+                <div class="mt-4 p-3 bg-indigo-900/20 border border-indigo-500/30 rounded-lg">
+                    <p class="text-indigo-300 text-sm"><strong>💡 Совет:</strong> Добавьте свои названия столбцов выше для более точного маскирования специфичных данных вашей организации.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Tab -->
+        <div id="panel-settings" class="hidden fade-in">
+            <div class="flex justify-between items-center mb-6 flex-wrap gap-2">
+                <h2 class="text-xl font-bold text-white">Настройки маскирования</h2>
+                <div class="flex gap-2">
+                    <button onclick="resetAllSettings()" class="bg-slate-700 hover:bg-slate-600 text-slate-300 px-4 py-2 rounded-lg text-sm transition">Сбросить</button>
+                    <button onclick="saveSettings()" class="btn-primary text-white px-4 py-2 rounded-lg text-sm font-semibold">Сохранить</button>
+                </div>
+            </div>
+            
+            <!-- Mask Parameters with descriptions -->
+            <div class="glass rounded-xl p-6 mb-6">
+                <h3 class="text-lg font-bold text-white mb-4">Параметры маски</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    <div class="param-card">
+                        <h4>🔤 Символ маски</h4>
+                        <p>Символ, которым заменяются обнаруженные данные. По умолчанию используется <span class="text-indigo-400">*</span>.</p>
+                    </div>
+                    <div class="param-card">
+                        <h4>🔄 Режим маскирования</h4>
+                        <p>Определяет как именно заменяются данные:</p>
+                        <ul>
+                            <li><strong class="text-indigo-400">Сохранять длину</strong> — каждый символ заменяется символом маски</li>
+                            <li><strong class="text-indigo-400">Полная замена</strong> — данные заменяются на "[ЗАМАСКИРОВАНО]"</li>
+                            <li><strong class="text-indigo-400">Частичное скрытие</strong> — последние 4 символа видны</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm text-slate-400 mb-2">Символ маски</label>
+                        <input id="maskChar" type="text" maxlength="1" value="*" class="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" onchange="updateMaskChar(this.value)">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-slate-400 mb-2">Режим</label>
+                        <select id="maskMode" class="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" onchange="updateMaskMode(this.value)">
+                            <option value="preserve">Сохранять длину и формат</option>
+                            <option value="replace">Полная замена</option>
+                            <option value="partial">Частичное скрытие (последние 4 символа)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div id="settingsContainer" class="space-y-4"></div>
+            <div class="mt-8">
+                <h3 class="text-lg font-bold text-white mb-4">Пользовательские паттерны</h3>
+                <div class="param-card mb-4">
+                    <h4>📐 Добавление своих паттернов</h4>
+                    <p>Вы можете добавить собственные правила поиска и маскирования данных используя регулярные выражения (regex).</p>
+                    <ul>
+                        <li>Укажите название паттерна для удобства идентификации</li>
+                        <li>Введите регулярное выражение (regex) для поиска данных</li>
+                        <li>Используйте кнопку <strong class="text-indigo-400">Добавить паттерн</strong> для создания нового правила</li>
+                    </ul>
+                    <p class="mt-2 text-slate-500">Пример regex: <code class="bg-slate-700 px-1 rounded">\b\d{10}\b</code></p>
+                </div>
+                <div id="customPatterns" class="space-y-3"></div>
+                <button onclick="addCustomPattern()" class="mt-4 bg-slate-700 hover:bg-slate-600 text-slate-300 px-4 py-2 rounded-lg text-sm transition flex items-center gap-2">➕ Добавить паттерн</button>
+            </div>
+            <div class="mt-8 glass rounded-xl p-6">
+                <h3 class="text-lg font-bold text-white mb-4">Обработка файла</h3>
+                <div class="space-y-3">
+                    <label class="flex items-center justify-between py-2 border-b border-slate-700/50 cursor-pointer">
+                        <div class="flex-1">
+                            <p class="text-sm font-medium text-slate-200">Удаление метаданных</p>
+                            <p class="text-xs text-slate-500">Удаляет автор, дата создания, приложение и другие метаданные из файлов</p>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="removeMetadata" class="sr-only" checked onchange="updateMetadataSetting(this.checked)">
+                            <div class="w-11 h-6 rounded-full toggle-on transition-colors" id="removeMetadataToggle"></div>
+                        </label>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Templates Tab -->
+        <div id="panel-templates" class="hidden fade-in">
+            <div class="flex justify-between items-center mb-6 flex-wrap gap-2">
+                <h2 class="text-xl font-bold text-white">Шаблоны маскирования</h2>
+                <div class="flex gap-2">
+                    <button onclick="clearAllTemplates()" class="bg-slate-700 hover:bg-slate-600 text-slate-300 px-4 py-2 rounded-lg text-sm transition">Снять все</button>
+                    <button onclick="selectAllTemplates()" class="btn-primary text-white px-4 py-2 rounded-lg text-sm font-semibold">Выбрать все</button>
+                </div>
+            </div>
+            <div class="glass rounded-xl p-4 mb-6">
+                <p class="text-sm text-slate-400">✅ <strong class="text-indigo-400">Новое:</strong> Теперь можно выбирать <strong>несколько шаблонов одновременно</strong>. Активные шаблоны объединяются — маскируются все данные из выбранных категорий.</p>
+            </div>
+            <div id="templatesContainer" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+        </div>
+
+        <!-- Preview Tab - NO PASSWORD PROTECTION -->
+        <div id="panel-preview" class="hidden fade-in">
+            <h2 class="text-xl font-bold text-white mb-4">Предпросмотр изменений</h2>
+            <div id="previewContainer">
+                <div class="text-center py-16 text-slate-500">
+                    <svg class="w-16 h-16 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                    </svg>
+                    <p>Загрузите и обработайте файлы для просмотра изменений</p>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+    // ==================== CONSTANTS ====================
+    const MAX_FILE_SIZE = 100 * 1024 * 1024;
+    const LARGE_FILE_THRESHOLD = 10 * 1024 * 1024;
+    const STREAMING_FILE_THRESHOLD = 5 * 1024 * 1024;  // 5MB — use streaming
+    const CHUNK_SIZE = 512 * 1024;
+    const STREAM_CHUNK_SIZE = 2 * 1024 * 1024;  // 2MB chunks for File.slice()
+    const MAX_REGEX_TIME = 2000;
+    const YIELD_INTERVAL = 50;
+
+    // ==================== STREAMING HELPERS ====================
+    /**
+     * Reads a Blob slice as text using FileReader
+     * @param {Blob} blob — slice of the file
+     * @returns {Promise<string>}
+     */
+    function readBlobAsText(blob) {
+        return new Promise(function(resolve, reject) {
+            var reader = new FileReader();
+            reader.onload = function(e) { resolve(e.target.result); };
+            reader.onerror = function(e) { reject(e); };
+            reader.readAsText(blob);
+        });
+    }
+
+    /**
+     * Process a large text file using File.slice() — memory-efficient streaming
+     * Splits file into STREAM_CHUNK_SIZE chunks, masks each, assembles result
+     * @param {File} file — original File object
+     * @param {string} fileName — display name
+     * @param {Array} changes — accumulator for mask changes
+     * @param {Function} progressCallback — fn(percent)
+     * @returns {Promise<Blob>}
+     */
+    async function processTextFileStreamed(file, fileName, changes, progressCallback) {
+        var totalSize = file.size;
+        var offset = 0;
+        var processedBlobs = [];
+        var chunkIndex = 0;
+        var totalChunks = Math.ceil(totalSize / STREAM_CHUNK_SIZE);
+        // Buffer for UTF-8 boundary handling
+        var carryOver = '';
+        var startTime = Date.now();
+
+        while (offset < totalSize) {
+            var end = Math.min(offset + STREAM_CHUNK_SIZE, totalSize);
+            var slice = file.slice(offset, end);
+            var text = await readBlobAsText(slice);
+
+            // Prepend carry-over from previous chunk to avoid splitting multi-byte chars
+            if (carryOver) { text = carryOver + text; carryOver = ''; }
+
+            // If this is not the last chunk, find a safe split point (newline preferred)
+            var isLastChunk = (end >= totalSize);
+            var textToProcess = text;
+            if (!isLastChunk) {
+                var lastNewline = text.lastIndexOf('\n');
+                var lastCR = text.lastIndexOf('\r');
+                var splitPos = Math.max(lastNewline, lastCR);
+                if (splitPos > text.length * 0.5) {
+                    // Safe split found
+                    textToProcess = text.substring(0, splitPos + 1);
+                    carryOver = text.substring(splitPos + 1);
+                }
+                // If no good split point, carryOver remains empty and we process whole chunk
+            }
+
+            // Mask this chunk
+            var maskedText;
+            if (textToProcess.length > 50000) {
+                maskedText = await maskTextChunked(textToProcess, fileName, changes, null);
+            } else {
+                maskedText = await maskTextAsync(textToProcess, fileName, changes);
+            }
+
+            // Store as Blob part (avoids keeping full string in memory)
+            processedBlobs.push(new Blob([maskedText], { type: 'text/plain;charset=utf-8' }));
+
+            // Clean up to free memory
+            text = null; textToProcess = null; maskedText = null;
+
+            offset = end - (carryOver ? carryOver.length : 0);
+            chunkIndex++;
+
+            if (progressCallback) {
+                progressCallback(Math.min(95, (chunkIndex / totalChunks) * 95));
+            }
+
+            // Yield to UI thread every 3 chunks
+            if (chunkIndex % 3 === 0) {
+                await new Promise(function(resolve) { setTimeout(resolve, 5); });
+            }
+
+            // Safety timeout — 10 minutes max per file
+            if (Date.now() - startTime > 600000) {
+                console.warn('Streaming timeout for file:', fileName);
+                break;
+            }
+        }
+
+        // Process any remaining carry-over
+        if (carryOver) {
+            var maskedCarry = await maskTextAsync(carryOver, fileName, changes);
+            processedBlobs.push(new Blob([maskedCarry], { type: 'text/plain;charset=utf-8' }));
+        }
+
+        if (progressCallback) progressCallback(98);
+
+        // Assemble final Blob from parts — memory efficient
+        // Assemble final Blob from parts (memory efficient) + UTF‑8 BOM для корректной кириллицы
+			var utf8Bom = '\ufeff';
+			var finalBlob = new Blob([utf8Bom].concat(processedBlobs), {
+			  type: 'text/plain;charset=utf-8'
+			});
+
+        // Clear blob parts to free memory
+        processedBlobs = [];
+
+        if (progressCallback) progressCallback(100);
+        return finalBlob;
+    }
+
+    /**
+     * Process a large DOCX using streaming XML processing
+     * Reads XML parts, masks text nodes one-by-one, writes back
+     */
+    async function processDocxStreamed(file, fileName, changes, progressCallback) {
+        var arrayBuffer = await file.arrayBuffer();
+        if (progressCallback) progressCallback(5);
+
+        var zip = await JSZip.loadAsync(arrayBuffer);
+        if (progressCallback) progressCallback(15);
+
+        var docXmlEntry = zip.file('word/document.xml');
+        if (docXmlEntry) {
+            var docXml = await docXmlEntry.async('string');
+            if (progressCallback) progressCallback(25);
+            // For very large document.xml, use streamed node processing
+            var maskedXml;
+            if (docXml.length > 20000) {
+                maskedXml = await maskDocxXmlStreamed(docXml, fileName, changes, function(p) {
+                    if (progressCallback) progressCallback(25 + p * 0.25);
+                });
+            } else {
+                maskedXml = await maskDocxXmlAsync(docXml, fileName, changes, function(p) {
+                    if (progressCallback) progressCallback(25 + p * 0.25);
+                });
+            }
+            zip.file('word/document.xml', maskedXml, { compression: 'DEFLATE', compressionOptions: { level: 6 } });
+        }
+        if (progressCallback) progressCallback(55);
+
+        // Process headers/footers with streaming
+        var headerFooterFiles = zip.file(/^word\/(header|footer)\d+\.xml$/);
+        for (var i = 0; i < headerFooterFiles.length; i++) {
+            var hfFile = headerFooterFiles[i];
+            var hfXml = await hfFile.async('string');
+            var maskedHf;
+            if (hfXml.length > 20000) {
+                maskedHf = await maskDocxXmlStreamed(hfXml, fileName, changes);
+            } else {
+                maskedHf = maskDocxXml(hfXml, fileName, changes);
+            }
+            zip.file(hfFile.name, maskedHf, { compression: 'DEFLATE', compressionOptions: { level: 6 } });
+            if (i % 2 === 0) await new Promise(function(resolve) { setTimeout(resolve, 5); });
+        }
+        if (progressCallback) progressCallback(75);
+
+        // Notes
+        var noteFiles = zip.file(/^word\/(footnotes|endnotes)\.xml$/);
+        for (var i = 0; i < noteFiles.length; i++) {
+            var noteFile = noteFiles[i];
+            var noteXml = await noteFile.async('string');
+            var maskedNote = maskDocxXml(noteXml, fileName, changes);
+            zip.file(noteFile.name, maskedNote, { compression: 'DEFLATE', compressionOptions: { level: 6 } });
+        }
+        if (progressCallback) progressCallback(85);
+
+        // Settings & metadata
+        var settingsXml = zip.file('word/settings.xml');
+        if (settingsXml) {
+            var settingsContent = await settingsXml.async('string');
+            if (state.removeMetadata) {
+                settingsContent = settingsContent.replace(/<w:defaultTabStop[^>]*\/>/g, '');
+                settingsContent = settingsContent.replace(/<w:trackRevisions[^>]*\/>/g, '');
+            }
+            zip.file('word/settings.xml', settingsContent, { compression: 'DEFLATE', compressionOptions: { level: 6 } });
+        }
+
+        if (state.removeMetadata) {
+            var coreXml = zip.file('docProps/core.xml');
+            if (coreXml) {
+                zip.file('docProps/core.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"></cp:coreProperties>');
+            }
+            var appXml = zip.file('docProps/app.xml');
+            if (appXml) {
+                zip.file('docProps/app.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>MaskingTool</Application></Properties>');
+            }
+            var customXml = zip.file('docProps/custom.xml');
+            if (customXml) zip.remove('docProps/custom.xml');
+        }
+        if (progressCallback) progressCallback(90);
+
+        // Generate with streaming to avoid loading entire zip into memory
+        var blob = await zip.generateAsync({
+            type: 'blob',
+            mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            compression: 'DEFLATE',
+            compressionOptions: { level: 9 }
+        });
+        if (progressCallback) progressCallback(100);
+        return blob;
+    }
+
+    /**
+     * Streamed version of DOCX XML masking for very large XML documents
+     * Processes text nodes in batches to avoid splitting huge strings
+     */
+    async function maskDocxXmlStreamed(xmlContent, fileName, changes, progressCallback) {
+        // Split by tags but keep them
+        var parts = xmlContent.split(/(<[^>]+>)/g);
+        var totalParts = parts.length;
+        var batchSize = 500;
+        var resultParts = new Array(parts.length);
+
+        for (var i = 0; i < parts.length; i += batchSize) {
+            var end = Math.min(i + batchSize, totalParts);
+            for (var j = i; j < end; j++) {
+                var part = parts[j];
+                if (!part.startsWith('<') && part.trim().length > 0) {
+                    var maskedPart = await maskTextAsync(part, fileName, changes);
+                    resultParts[j] = maskedPart;
+                } else if (part.startsWith('<') && !part.startsWith('</') && !part.endsWith('/>')) {
+                    var attrMasked = await maskDocxAttributesAsync(part, fileName, changes);
+                    resultParts[j] = attrMasked;
+                } else {
+                    resultParts[j] = part;
+                }
+            }
+
+            // Report progress
+            if (progressCallback && i % 2000 === 0) {
+                progressCallback((Math.min(i + batchSize, totalParts) / totalParts) * 100);
+            }
+
+            // Yield every batch
+            await new Promise(function(resolve) { setTimeout(resolve, 0); });
+        }
+
+        if (progressCallback) progressCallback(100);
+        return resultParts.join('');
+    }
+
+    /**
+     * Process a large XLSX file with per-sheet streaming and column typing
+     */
+    async function processXlsxStreamed(file, fileName, ext, changes, progressCallback) {
+        // XLSX files must be read as a whole due to ZIP structure,
+        // but we can process sheets sequentially with yielding
+        var data = await file.arrayBuffer();
+        if (progressCallback) progressCallback(10);
+
+        var wb = XLSX.read(data, { type: 'array', cellStyles: true });
+        if (progressCallback) progressCallback(20);
+
+        // Reset self-detected columns
+        state.selfDetectedColumns = { commercial: [], personal: [], logins: [] };
+
+        // Rebuild trie from list data
+        companyNameTrie = new CompanyNameTrie();
+        state.listData.forEach(function(values){
+            values.forEach(function(v){ if (v.length > 3) companyNameTrie.insert(v); });
+        });
+
+        var totalSheets = wb.SheetNames.length;
+        var totalCells = 0;
+        var processedCells = 0;
+
+        // Count total cells
+        wb.SheetNames.forEach(function(sheetName){
+            var ws = wb.Sheets[sheetName]; if (!ws || !ws['!ref']) return;
+            var range = XLSX.utils.decode_range(ws['!ref']);
+            totalCells += (range.e.r - range.s.r + 1) * (range.e.c - range.s.c + 1);
+        });
+
+        // Phase 1: Column type detection
+        var columnTypes = {};
+        var columnValues = {};
+
+        wb.SheetNames.forEach(function(sheetName){
+            var ws = wb.Sheets[sheetName]; if (!ws || !ws['!ref']) return;
+            var range = XLSX.utils.decode_range(ws['!ref']);
+            columnValues[sheetName] = {};
+            for (var C = range.s.c; C <= range.e.c; ++C) {
+                var headerAddr = XLSX.utils.encode_cell({ r: range.s.r, c: C });
+                var headerCell = ws[headerAddr];
+                var headerText = headerCell && headerCell.v !== undefined ? String(headerCell.v) : '';
+                var detectedType = detectColumnType(headerText);
+                if (detectedType) {
+                    columnTypes[sheetName] = columnTypes[sheetName] || {};
+                    columnTypes[sheetName][C] = detectedType;
+                    var key = fileName + '|' + sheetName + '|' + C;
+                    columnTypeCache.set(key, detectedType);
+                }
+                columnValues[sheetName][C] = [];
+            }
+            for (var R = range.s.r + 1; R <= range.e.r && R <= range.s.r + 20; ++R) {
+                for (var C = range.s.c; C <= range.e.c; ++C) {
+                    var addr = XLSX.utils.encode_cell({ r: R, c: C });
+                    var cell = ws[addr];
+                    if (cell && cell.v !== undefined && cell.v !== null) {
+                        columnValues[sheetName][C].push(String(cell.v));
+                    }
+                }
+            }
+        });
+
+        // Build header lookup for exclusion check
+        var columnHeaders = {};
+        wb.SheetNames.forEach(function(sheetName){
+            var ws = wb.Sheets[sheetName]; if (!ws || !ws['!ref']) return;
+            var range = XLSX.utils.decode_range(ws['!ref']);
+            columnHeaders[sheetName] = {};
+            for (var C = range.s.c; C <= range.e.c; ++C) {
+                var headerAddr = XLSX.utils.encode_cell({ r: range.s.r, c: C });
+                var headerCell = ws[headerAddr];
+                columnHeaders[sheetName][C] = headerCell && headerCell.v !== undefined ? String(headerCell.v) : '';
+            }
+        });
+
+        // Self-learning from cell values
+        wb.SheetNames.forEach(function(sheetName){
+            if (!columnValues[sheetName]) return;
+            var cols = Object.keys(columnValues[sheetName]);
+            for (var i = 0; i < cols.length; i++) {
+                var C = parseInt(cols[i]);
+                if (columnTypes[sheetName] && columnTypes[sheetName][C]) continue;
+                var headerText = columnHeaders[sheetName] && columnHeaders[sheetName][C];
+                if (isColumnExcluded(headerText)) continue;
+                var values = columnValues[sheetName][C];
+                if (values.length === 0) continue;
+                var inferredType = detectColumnTypeFromCells(values, 10, headerText);
+                if (inferredType) {
+                    columnTypes[sheetName] = columnTypes[sheetName] || {};
+                    columnTypes[sheetName][C] = inferredType;
+                    var ws = wb.Sheets[sheetName];
+                    var headerAddr = XLSX.utils.encode_cell({ r: 0, c: C });
+                    var headerCell = ws[headerAddr];
+                    var colName = headerCell && headerCell.v ? String(headerCell.v) : 'Столбец ' + (C + 1);
+                    if (inferredType === 'company' && state.selfDetectedColumns.commercial.indexOf(colName) === -1) state.selfDetectedColumns.commercial.push(colName);
+                    if (inferredType === 'person' && state.selfDetectedColumns.personal.indexOf(colName) === -1) state.selfDetectedColumns.personal.push(colName);
+                    if (inferredType === 'login' && state.selfDetectedColumns.logins.indexOf(colName) === -1) state.selfDetectedColumns.logins.push(colName);
+                }
+            }
+        });
+
+        // Phase 2: Process cells with streaming (skip excluded columns)
+        for (var s = 0; s < wb.SheetNames.length; s++) {
+            var sheetName = wb.SheetNames[s];
+            var ws = wb.Sheets[sheetName]; if (!ws || !ws['!ref']) continue;
+            var range = XLSX.utils.decode_range(ws['!ref']);
+
+            for (var R = range.s.r; R <= range.e.r; ++R) {
+                for (var C = range.s.c; C <= range.e.c; ++C) {
+                    var addr = XLSX.utils.encode_cell({ r: R, c: C });
+                    var cell = ws[addr];
+                    if (cell && cell.v !== undefined && cell.v !== null) {
+                        var val = String(cell.v); var fileChanges = [];
+                        var headerText = columnHeaders[sheetName] && columnHeaders[sheetName][C];
+                        var isExcluded = isColumnExcluded(headerText);
+                        var colType = !isExcluded && columnTypes[sheetName] && columnTypes[sheetName][C];
+                        var masked;
+                        if (colType && R > range.s.r) {
+                            masked = applyMaskByType(val, colType);
+                            fileChanges.push({
+                                type: colType === 'company' ? 'Организация (колонка)' : colType === 'person' ? 'ФИО (колонка)' : 'Логин (колонка)',
+                                original: maskPreview(val), masked: masked, rule: 'column_type:' + colType,
+                                fileName: fileName, cell: addr, sheet: sheetName
+                            });
+                        } else if (!isExcluded) {
+                            if (val.length > 100) masked = await maskTextAsync(val, fileName, fileChanges);
+                            else masked = maskText(val, fileName, fileChanges);
+                        }
+                        if (fileChanges.length > 0) {
+                            cell.v = masked; cell.t = 's';
+                            delete cell.w; delete cell.z;
+                            changes.push.apply(changes, fileChanges.map(function(c){ return Object.assign({}, c, { cell: addr, sheet: sheetName }); }));
+                        }
+                    }
+                    processedCells++;
+                    if (processedCells % 200 === 0) {
+                        if (progressCallback) {
+                            var sheetProgress = (processedCells / totalCells) * 60;
+                            progressCallback(20 + sheetProgress);
+                        }
+                        await new Promise(function(resolve) { setTimeout(resolve, 1); });
+                    }
+                }
+            }
+        }
+
+        if (progressCallback) progressCallback(85);
+        if (state.removeMetadata) {
+            if (wb.Props) { wb.Props.Creator = ''; wb.Props.LastModifiedBy = ''; wb.Props.ModifiedDate = new Date().toISOString(); wb.Props.CreatedDate = new Date().toISOString(); }
+        }
+        if (progressCallback) progressCallback(95);
+
+		// Определяем, в какой формат сохранять: xlsx или xlsb по имени файла
+		var lowerName = fileName.toLowerCase();
+		var outExt = lowerName.endsWith('.xlsb') ? 'xlsb' : 'xlsx';
+
+		var bookType = outExt; // 'xlsx' или 'xlsb'
+		var mimeType = outExt === 'xlsb'
+		  ? 'application/vnd.ms-excel.sheet.binary.macroEnabled.12'
+		  : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+		var newWbData = XLSX.write(wb, {
+		  type: 'array',
+		  bookType: bookType,
+		  compression: true
+		});
+
+		if (progressCallback) progressCallback(100);
+
+		return new Blob([newWbData], { type: mimeType });
+    }
+
+    // ==================== OPF CONSTANTS ====================
+    var OPF_LIST = ['ООО','АО','ПАО','ЗАО','ОАО','ИП','НКО','ФГУП','ГУП','МУП','АНО','Фонд','Союз','Ассоциация','ТСЖ','СНТ','ГБУ','МБУ','ФГБУ'];
+    var OPF_FULL_LIST = ['ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ','АКЦИОНЕРНОЕ ОБЩЕСТВО'];
+    var OPF_INTL_LIST = ['Ltd','Inc','GmbH','S.A.','B.V.','LLP','PLC','Corp'];
+    var ALL_OPF_FOR_REGEX = OPF_LIST.concat(OPF_FULL_LIST).concat(OPF_INTL_LIST);
+    var OPF_REGEX_PART = ALL_OPF_FOR_REGEX.map(function(opf){ return opf.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); }).join('|');
+
+    // ==================== COLUMN HEADER DETECTION ====================
+    var DEFAULT_COMMERCIAL_COLUMNS = [
+        'Наименование экспедитора','Наименование получателя','Наименование заказчика',
+        'Наименование грузоотправителя','Наименование грузополучателя',
+        'Наименование завода-производителя','Наименование завода',
+        'Краткий текст материала','Резерв клиента'
+    ];
+    var DEFAULT_PERSONAL_COLUMNS = ['Пользователь','Login','ФИО','Фамилия'];
+
+    // ==================== TRIE STRUCTURE FOR COMPANY NAMES ====================
+    function CompanyNameTrie() {
+        this.root = {};
+        this.count = 0;
+    }
+    CompanyNameTrie.prototype.insert = function(name) {
+        var node = this.root;
+        var chars = name.toLowerCase().replace(/\s+/g, '');
+        for (var i = 0; i < chars.length; i++) {
+            if (!node[chars[i]]) node[chars[i]] = {};
+            node = node[chars[i]];
+        }
+        node._end = true;
+        this.count++;
+    };
+    CompanyNameTrie.prototype.findInText = function(text) {
+        var results = [];
+        var normalized = text.toLowerCase().replace(/\s+/g, '');
+        for (var i = 0; i < normalized.length; i++) {
+            var node = this.root;
+            var j = i;
+            while (j < normalized.length && node[normalized[j]]) {
+                node = node[normalized[j]];
+                if (node._end) {
+                    results.push(text.substring(i, j + 1));
+                }
+                j++;
+            }
+        }
+        return results;
+    };
+    CompanyNameTrie.prototype.contains = function(text) {
+        var normalized = text.toLowerCase().replace(/\s+/g, '');
+        for (var i = 0; i < normalized.length; i++) {
+            var node = this.root;
+            var j = i;
+            while (j < normalized.length && node[normalized[j]]) {
+                node = node[normalized[j]];
+                if (node._end) return true;
+                j++;
+            }
+        }
+        return false;
+    };
+
+    // ==================== COLUMN TYPE CACHE ====================
+    var columnTypeCache = new Map();
+    var companyNameTrie = new CompanyNameTrie();
+    var listBasedCompanyNames = new Set();
+
+    function getCachedColumnType(workbookId, sheetName, colIndex, header) {
+        var key = workbookId + '|' + sheetName + '|' + colIndex;
+        if (columnTypeCache.has(key)) return columnTypeCache.get(key);
+        var type = detectColumnType(header);
+        columnTypeCache.set(key, type);
+        return type;
+    }
+
+    // ==================== SELF-LEARNING: COLUMN TYPE DETECTION ====================
+    function detectColumnType(headerText) {
+        if (!headerText) return null;
+        // Check excluded columns first — if matched, do not type
+        if (isColumnExcluded(headerText)) return null;
+        var h = String(headerText).trim().toLowerCase();
+        var commCols = state.customCommercialColumns || [];
+        var persCols = state.customPersonalColumns || [];
+        var allComm = DEFAULT_COMMERCIAL_COLUMNS.concat(commCols);
+        var allPers = DEFAULT_PERSONAL_COLUMNS.concat(persCols);
+        for (var i = 0; i < allComm.length; i++) {
+            if (h.indexOf(allComm[i].toLowerCase()) !== -1) return 'company';
+        }
+        for (var i = 0; i < allPers.length; i++) {
+            if (h.indexOf(allPers[i].toLowerCase()) !== -1) {
+                if (h.indexOf('пользователь') !== -1 || h.indexOf('login') !== -1 || h.indexOf('логин') !== -1) return 'login';
+                return 'person';
+            }
+        }
+        return null;
+    }
+
+    // ==================== SELF-LEARNING: DETECT TYPE FROM CELL VALUES ====================
+    function detectColumnTypeFromCells(cellValues, sampleSize, headerText) {
+        sampleSize = sampleSize || 10;
+        // If column header is excluded, skip self-learning
+        if (headerText && isColumnExcluded(headerText)) return null;
+        var values = cellValues.filter(function(v){ return v && String(v).trim().length > 1; });
+        if (values.length === 0) return null;
+        var sample = values.slice(0, Math.min(sampleSize, values.length));
+        var companyCount = 0, personCount = 0, loginCount = 0;
+        for (var i = 0; i < sample.length; i++) {
+            var val = String(sample[i]).trim();
+            if (isCompanyName(val)) companyCount++;
+            if (isPersonName(val)) personCount++;
+            if (isLogin(val)) loginCount++;
+        }
+        var threshold = sample.length * 0.3;
+        if (companyCount >= threshold) return 'company';
+        if (personCount >= threshold) return 'person';
+        if (loginCount >= threshold) return 'login';
+        return null;
+    }
+
+    function isCompanyName(val) {
+        if (!val || val.length < 3) return false;
+        var v = val.toLowerCase();
+        for (var i = 0; i < ALL_OPF_FOR_REGEX.length; i++) {
+            if (v.indexOf(ALL_OPF_FOR_REGEX[i].toLowerCase()) !== -1) return true;
+        }
+        if (companyNameTrie.contains(val)) return true;
+        if (/\b[А-ЯЁA-Z][а-яёa-z]+\s+(?:логистика|трейдинг|холдинг|групп|нефте|хим|пром|строй|транс|сервис|консалтинг|машин|металл|агро|фарм|банк|страх|инвест|финанс|инжиниринг|компани|систем|техно|электро|газ|уголь|цемент|карьер|мяс|молок|хлеб)\b/gi.test(val)) return true;
+        return false;
+    }
+
+    function isPersonName(val) {
+        if (!val || val.length < 3) return false;
+        return /\b[А-ЯЁ][а-яё]+\s+[А-ЯЁ]\.\s*[А-ЯЁ]\./.test(val) || /\b[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+\b/.test(val);
+    }
+
+    function isLogin(val) {
+        if (!val || val.length < 3 || val.length > 30) return false;
+        return /^[A-Za-z][A-Za-z0-9_\.]+$/.test(val) && /[A-Za-z]{3,}/.test(val) && !val.includes(' ') && !val.includes('@');
+    }
+
+    // ==================== BATCH COLUMN PROCESSING ====================
+    function processUniformColumn(cells, columnType, fileName, changes) {
+        for (var i = 0; i < cells.length; i++) {
+            if (!cells[i] || String(cells[i]).length < 2) continue;
+            var original = String(cells[i]);
+            var masked = applyMaskByType(original, columnType);
+            changes.push({
+                type: columnType === 'company' ? 'Организация (колонка)' : columnType === 'person' ? 'ФИО (колонка)' : 'Логин (колонка)',
+                original: maskPreview(original),
+                masked: masked,
+                rule: 'batch_column:' + columnType,
+                fileName: fileName,
+                batchIndex: i
+            });
+            cells[i] = masked;
+        }
+    }
+
+    function applyMaskByType(value, columnType) {
+        var mode = state.maskMode || 'preserve';
+        var char = state.maskChar || '*';
+        if (mode === 'replace') return '[ЗАМАСКИРОВАНО]';
+        if (mode === 'partial') {
+            var len = value.length;
+            if (len <= 4) return char.repeat(len);
+            return char.repeat(len - 4) + value.slice(-4);
+        }
+        return value.replace(/[a-zA-Zа-яА-ЯёЁ0-9@._%+\-]/g, char);
+    }
+
+    // ==================== STATE ====================
+    var state = {
+        files: [],
+        processedFiles: [],
+        changes: {},
+        currentUser: '',
+        userDomain: '',
+        userIP: 'не определен',
+        internalIP: null,
+        settings: {},
+        activeTemplate: 'full',
+        activeTemplates: ['full'],
+        maskChar: '*',
+        maskMode: 'preserve',
+        customPatterns: [],
+        customCommercialColumns: [],
+        customPersonalColumns: [],
+        excludedColumns: [],
+        removeMetadata: true,
+        fileInfoOpen: false,
+        isProcessing: false,
+        listFiles: [],
+        listData: new Map(),
+        selfDetectedColumns: { commercial: [], personal: [], logins: [] }
+    };
+
+    // ==================== USER DETECTION ====================
+    function extractUsernameFromPath(path) {
+        if (!path) return null;
+        var usersMatch = path.match(/\\Users\\([^\\]+)\\Documents/i);
+        if (usersMatch && usersMatch[1]) return usersMatch[1];
+        var altMatch = path.match(/\\Users\\([^\\]+)/i);
+        if (altMatch && altMatch[1]) return altMatch[1];
+        return null;
+    }
+    function extractCleanUsername(rawLogin) {
+        if (!rawLogin) return 'unknown';
+        var clean = rawLogin.trim();
+        clean = clean.replace(/@[^@]+$/, '');
+        clean = clean.replace(/^[^\\]+\\/, '');
+        clean = clean.replace(/^.*[\/\\]/, '');
+        clean = clean.split('.')[0] || clean;
+        return clean || 'unknown';
+    }
+    function extractDomainAndUser(rawLogin) {
+        if (!rawLogin) return { domain: 'UNKNOWN', username: 'unknown' };
+        var clean = rawLogin.trim();
+        var domainMatch = clean.match(/^([^\\]+)\\(.+)$/);
+        if (domainMatch) return { domain: domainMatch[1], username: domainMatch[2] };
+        var emailMatch = clean.match(/^(.+)@(.+)$/);
+        if (emailMatch) return { domain: emailMatch[2], username: emailMatch[1] };
+        return { domain: 'UNKNOWN', username: clean };
+    }
+    async function detectUser() {
+        var savedLogin = localStorage.getItem('ad_login');
+        if (savedLogin) { var parsed = extractDomainAndUser(savedLogin); state.currentUser = parsed.username; state.userDomain = parsed.domain; return state.currentUser; }
+        try { var fileInput = document.getElementById('fileInput'); if (fileInput && fileInput.value) { var path = fileInput.value; var username = extractUsernameFromPath(path); if (username) { localStorage.setItem('ad_login', username); var parsed = extractDomainAndUser(username); state.currentUser = parsed.username; state.userDomain = parsed.domain; return state.currentUser; } } } catch(e){}
+        try { if (typeof ActiveXObject !== 'undefined') { var wsh = new ActiveXObject('WScript.Network'); var username = wsh.UserName; var domain = wsh.UserDomain; if (username && username !== '') { var fullName = domain ? domain + '\\' + username : username; localStorage.setItem('ad_login', fullName); state.currentUser = username; state.userDomain = domain || 'UNKNOWN'; return state.currentUser; } } } catch(e){}
+        var endpoints = ['/api/auth/user', '/auth/current-user', '/user/info', '/api/user/current', '/api/whoami'];
+        for (var i = 0; i < endpoints.length; i++) { try { var controller = new AbortController(); var timeoutId = setTimeout(function(){ controller.abort(); }, 1000); var response = await fetch(endpoints[i], { credentials: 'include', signal: controller.signal }); clearTimeout(timeoutId); if (response.ok) { var data = await response.json(); var login = data.login || data.username || data.user || data.name; if (login && login !== '') { localStorage.setItem('ad_login', login); var parsed = extractDomainAndUser(login); state.currentUser = parsed.username; state.userDomain = parsed.domain; return state.currentUser; } } } catch(e){} }
+        try { var urlParams = new URLSearchParams(window.location.search); var userParam = urlParams.get('user') || urlParams.get('username') || urlParams.get('login'); if (userParam && userParam !== '') { localStorage.setItem('ad_login', userParam); var parsed = extractDomainAndUser(userParam); state.currentUser = parsed.username; state.userDomain = parsed.domain; return state.currentUser; } } catch(e){}
+        try { var hostname = window.location.hostname; if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1') { var fallbackUser = hostname.split('.')[0]; localStorage.setItem('ad_login', fallbackUser); state.currentUser = fallbackUser; state.userDomain = 'UNKNOWN'; return state.currentUser; } } catch(e){}
+        var fallbackUser = 'user_' + Date.now().toString(36).substring(0, 6); localStorage.setItem('ad_login', fallbackUser); state.currentUser = fallbackUser; state.userDomain = 'UNKNOWN'; return state.currentUser;
+    }
+    async function detectUserIP() { try { var response = await fetch('https://ipapi.co/json/', { timeout: 3000 }); if (response.ok) { var data = await response.json(); state.userIP = data.ip || 'не определен'; return state.userIP; } } catch(e){} try { var response = await fetch('https://api.ipify.org?format=json', { timeout: 3000 }); if (response.ok) { var data = await response.json(); state.userIP = data.ip || 'не определен'; return state.userIP; } } catch(e){} state.userIP = 'не определен'; return state.userIP; }
+    async function detectInternalIP() { return new Promise(function(resolve) { try { var RTCPeerConnection = window.RTCPeerConnection || window.mozRTCPeerConnection || window.webkitRTCPeerConnection; if (!RTCPeerConnection) { state.internalIP = null; resolve(null); return; } var pc = new RTCPeerConnection({ iceServers: [] }); pc.createDataChannel(''); pc.onicecandidate = function(e) { if (!e.candidate) { pc.close(); resolve(state.internalIP); return; } var ipMatch = /([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})/.exec(e.candidate.candidate); if (ipMatch && !state.internalIP) { var ip = ipMatch[1]; if (ip.startsWith('10.') || ip.startsWith('172.') || ip.startsWith('192.168.')) state.internalIP = ip; } }; pc.createOffer().then(function(offer){ pc.setLocalDescription(offer); }); setTimeout(function(){ pc.close(); resolve(state.internalIP || null); }, 2000); } catch(e) { state.internalIP = null; resolve(null); } }); }
+    function getDisplayIP() { var external = state.userIP || '0.0.0.0'; var internal = state.internalIP; var ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/; if (!ipRegex.test(external)) external = '0.0.0.0'; if (!internal || internal === external) return external; return external + ' / ' + internal; }
+
+    // ==================== UI HELPERS ====================
+    function toggleFileInfo() { state.fileInfoOpen = !state.fileInfoOpen; var content = document.getElementById('fileInfoContent'); var arrow = document.getElementById('fileInfoArrow'); if (state.fileInfoOpen) { content.classList.add('open'); arrow.classList.add('rotated'); } else { content.classList.remove('open'); arrow.classList.remove('rotated'); } }
+    function switchTab(tabName) { var tabs = ['upload','listfiles','columnsettings','settings','templates','preview']; for (var i = 0; i < tabs.length; i++) { var t = tabs[i]; var tabEl = document.getElementById('tab-' + t); var panelEl = document.getElementById('panel-' + t); if (tabEl) { tabEl.classList.remove('tab-active'); tabEl.classList.add('text-slate-400'); } if (panelEl) panelEl.classList.add('hidden'); } var activeTab = document.getElementById('tab-' + tabName); var activePanel = document.getElementById('panel-' + tabName); if (activeTab) { activeTab.classList.add('tab-active'); activeTab.classList.remove('text-slate-400'); } if (activePanel) activePanel.classList.remove('hidden'); if (tabName === 'preview') renderPreview(); if (tabName === 'settings') renderSettings(); if (tabName === 'listfiles') renderListFiles(); if (tabName === 'columnsettings') renderColumnSettings(); if (tabName === 'templates') renderTemplates(); }
+
+    // ==================== CUSTOM COLUMNS ====================
+    function addCustomColumn(category) {
+        var inputId = category === 'commercial' ? 'customColCommercial' : 'customColPersonal';
+        var input = document.getElementById(inputId);
+        var value = input.value.trim();
+        if (!value) return;
+        var arr = category === 'commercial' ? state.customCommercialColumns : state.customPersonalColumns;
+        if (arr.indexOf(value) !== -1) { showNotification('Такое название уже добавлено', 'error'); return; }
+        arr.push(value);
+        input.value = '';
+        renderColumnSettings();
+        showNotification('Название столбца добавлено');
+    }
+    function removeCustomColumn(category, index) {
+        var arr = category === 'commercial' ? state.customCommercialColumns : state.customPersonalColumns;
+        arr.splice(index, 1);
+        renderColumnSettings();
+    }
+
+    // ==================== EXCLUDED COLUMNS (WHITELIST) ====================
+    function isColumnExcluded(headerText) {
+        if (!headerText || !state.excludedColumns || state.excludedColumns.length === 0) return false;
+        var h = String(headerText).trim().toLowerCase();
+        for (var i = 0; i < state.excludedColumns.length; i++) {
+            if (h.indexOf(state.excludedColumns[i].toLowerCase()) !== -1) return true;
+        }
+        return false;
+    }
+    function addExcludedColumn() {
+        var input = document.getElementById('excludedColumnInput');
+        var value = input.value.trim();
+        if (!value) return;
+        if (state.excludedColumns.indexOf(value) !== -1) { showNotification('Этот столбец уже в исключениях', 'error'); return; }
+        state.excludedColumns.push(value);
+        input.value = '';
+        renderColumnSettings();
+        showNotification('Столбец добавлен в исключения');
+    }
+    function removeExcludedColumn(index) {
+        state.excludedColumns.splice(index, 1);
+        renderColumnSettings();
+    }
+
+    function renderColumnSettings() {
+        var commList = document.getElementById('customCommercialColumnsList');
+        var persList = document.getElementById('customPersonalColumnsList');
+        if (!commList || !persList) return;
+        var commHtml = '';
+        for (var i = 0; i < state.customCommercialColumns.length; i++) {
+            commHtml += '<span class="col-tag">' + escapeHtml(state.customCommercialColumns[i]) + ' <span class="remove" onclick="removeCustomColumn(\'commercial\',' + i + ')">&times;</span></span>';
+        }
+        if (state.customCommercialColumns.length === 0) commHtml = '<span class="text-xs text-slate-500">Нет добавленных столбцов</span>';
+        commList.innerHTML = commHtml;
+        var persHtml = '';
+        for (var i = 0; i < state.customPersonalColumns.length; i++) {
+            persHtml += '<span class="col-tag">' + escapeHtml(state.customPersonalColumns[i]) + ' <span class="remove" onclick="removeCustomColumn(\'personal\',' + i + ')">&times;</span></span>';
+        }
+        if (state.customPersonalColumns.length === 0) persHtml = '<span class="text-xs text-slate-500">Нет добавленных столбцов</span>';
+        persList.innerHTML = persHtml;
+        // Render self-detected columns
+        var detComm = document.getElementById('detectedCommercialCols');
+        var detCommList = document.getElementById('detectedCommercialColsList');
+        if (detComm && detCommList) {
+            if (state.selfDetectedColumns.commercial.length > 0) {
+                detComm.classList.remove('hidden');
+                var dch = '';
+                for (var i = 0; i < state.selfDetectedColumns.commercial.length; i++) {
+                    dch += '<span class="detected-type-tag detected-type-company">' + escapeHtml(state.selfDetectedColumns.commercial[i]) + '</span>';
+                }
+                detCommList.innerHTML = dch;
+            } else { detComm.classList.add('hidden'); }
+        }
+        var detPers = document.getElementById('detectedPersonalCols');
+        var detPersList = document.getElementById('detectedPersonalColsList');
+        if (detPers && detPersList) {
+            if (state.selfDetectedColumns.personal.length > 0 || state.selfDetectedColumns.logins.length > 0) {
+                detPers.classList.remove('hidden');
+                var dph = '';
+                for (var i = 0; i < state.selfDetectedColumns.personal.length; i++) {
+                    dph += '<span class="detected-type-tag detected-type-person">' + escapeHtml(state.selfDetectedColumns.personal[i]) + '</span>';
+                }
+                for (var i = 0; i < state.selfDetectedColumns.logins.length; i++) {
+                    dph += '<span class="detected-type-tag detected-type-login">' + escapeHtml(state.selfDetectedColumns.logins[i]) + '</span>';
+                }
+                detPersList.innerHTML = dph;
+            } else { detPers.classList.add('hidden'); }
+        }
+        // Render excluded columns
+        var exclList = document.getElementById('excludedColumnsList');
+        var exclApplied = document.getElementById('excludedColsApplied');
+        if (exclList) {
+            var exh = '';
+            for (var i = 0; i < state.excludedColumns.length; i++) {
+                exh += '<span class="col-tag-excluded">' + escapeHtml(state.excludedColumns[i]) + ' <span class="remove" onclick="removeExcludedColumn(' + i + ')">&times;</span></span>';
+            }
+            if (state.excludedColumns.length === 0) exh = '<span class="text-xs text-slate-500">Нет исключаемых столбцов</span>';
+            exclList.innerHTML = exh;
+        }
+        if (exclApplied) {
+            if (state.excludedColumns.length > 0) exclApplied.classList.remove('hidden');
+            else exclApplied.classList.add('hidden');
+        }
+    }
+
+    // ==================== MASKING RULES (updated with new OPF and company patterns) ====================
+    var defaultRules = [
+        { id: 'russian_names', name: 'ФИО (русские фамилии и имена)', category: 'personal', enabled: true, patterns: [
+            { regex: /\b[А-ЯЁ][а-яё]{2,25}\s+[А-ЯЁ][а-яё]{1,25}\s+[А-ЯЁ][а-яё]{1,25}\b/g, type: 'ФИО (полное)' },
+            { regex: /\b[А-ЯЁ][а-яё]{2,25}\s+[А-ЯЁ]\.\s*[А-ЯЁ]\./g, type: 'ФИО (с инициалами)' },
+            { regex: /\b[А-ЯЁ]\.\s*[А-ЯЁ]\.\s*[А-ЯЁ][а-яё]{2,25}\b/g, type: 'ФИО (инициалы + фамилия)' }
+        ]},
+        { id: 'phone', name: 'Телефоны РФ', category: 'personal', enabled: true, patterns: [
+            { regex: /(?:\+7|8)[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}/g, type: 'Телефон' },
+            { regex: /(?:\+7|8)\d{10}/g, type: 'Телефон' }
+        ]},
+        { id: 'email', name: 'Email адреса', category: 'personal', enabled: true, patterns: [
+            { regex: /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g, type: 'Email' }
+        ]},
+        { id: 'inn', name: 'ИНН', category: 'personal', enabled: true, patterns: [
+            { regex: /(?:ИНН|инн)[\s:;=]*(\d{10}|\d{12})/gi, type: 'ИНН' }
+        ]},
+        { id: 'snils', name: 'СНИЛС', category: 'personal', enabled: true, patterns: [
+            { regex: /СНИЛС[\s:]*(\d{3}[\s\-]?\d{3}[\s\-]?\d{3}[\s]?\d{2})/gi, type: 'СНИЛС' },
+            { regex: /\b\d{3}[\s\-]\d{3}[\s\-]\d{3}[\s]\d{2}\b/g, type: 'СНИЛС (формат)' }
+        ]},
+        { id: 'passport', name: 'Паспортные данные', category: 'personal', enabled: true, patterns: [
+            { regex: /(?:[Сс][\s]*[её][\s]*[рр]?[\s]*[иі]?[\s]*[яя]?[\s]*[:;.=\s]+[\s]*)(\d{4})/g, type: 'Серия паспорта' },
+            { regex: /(?:[Нн][\s]*[оо][\s]*[мм]?[\s]*[е]?[\s]*[рр]?[\s]*[:;.=\s]+[\s]*)(\d{6})/g, type: 'Номер паспорта' },
+            { regex: /(?:серия|сер\.)[\s:;.=\s]+(\d{4})[\s,;]*(?:номер|ном\.)?[\s:;.=\s]*(\d{6})/gi, type: 'Паспорт серия+номер' },
+            { regex: /паспорт[\s:;.=\s]*(\d{4})[\s]*(\d{6})/gi, type: 'Паспорт' },
+            { regex: /(?:[Кк][\s]*[её][\s]*[м]?[\s]*[Вв]?[\s]*[ыы]?[\s]*[дд]?[\s]*[аа]?[\s]*[нн]?[\s]*[:;.=\s]+[\s]*)([^\n\r]{3,120})/g, type: 'Кем выдан' },
+            { regex: /(?:[Вв][\s]*[ыы]?[\s]*[дд]?[\s]*[аа]?[\s]*[нн]?[\s]*[:;.=\s]+[\s]*)(\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{2,4})/g, type: 'Дата выдачи паспорта' },
+            { regex: /(?:[Кк][\s]*[оо][\s]*[дд]?[\s]*[Пп][\s]*[оо][\s]*[дд]?[\s]*[рр]?[\s]*[аа]?[\s]*[зз]?[\s]*[дд]?[\s]*[её]?[\s]*[лль]?[\s]*[нн]?[\с]*[иия]?[\s]*[:;.=\s]+[\s]*)(\d{3}[\-]?\d{3})/g, type: 'Код подразделения' },
+            { regex: /код\s+подразделения[\s:;.=\s]+(\d{3}[\-]?\d{3})/gi, type: 'Код подразделения' },
+            { regex: /\d{3}[\-]\d{3}(?=\s*$|\s*(?:выдан|серия|номер))/g, type: 'Код подразделения (контекст)' }
+        ]},
+        { id: 'address', name: 'Адреса (РФ)', category: 'personal', enabled: true, patterns: [
+            { regex: /\b\d{6}\b/g, type: 'Почтовый индекс' },
+            { regex: /\b\d{6},\s*[А-ЯЁа-яё\s\-.,]+(?:область|край|республика|автономный\s*округ)[\s,]*[А-ЯЁа-яё\s\-.,]{10,200}/g, type: 'Полный адрес' },
+            { regex: /(?:г\.|город)\s*[А-ЯЁ][а-яё]+/g, type: 'Адрес (город)' },
+            { regex: /(?:дом|д\.)\s*\d+[а-яА-Я]?/gi, type: 'Адрес (дом)' },
+            { regex: /(?:кабинет|каб\.|офис|оф\.)\s*\d+[а-яА-Я]?/gi, type: 'Кабинет/Офис' },
+            { regex: /(?:строение|стр\.|корпус|к\.|владение|вл\.)\s*\d+[а-яА-Я]?/gi, type: 'Строение/Корпус' },
+            { regex: /(?:квартал|территория|район|проспект|улица|ул\.|пр\.|пер\.|набережная|наб\.|бульвар|бул\.|шоссе|ш\.|площадь|пл\.)[\s.]+[А-ЯЁа-яё\s\-.,№\d]{3,120}/gi, type: 'Адрес (улица)' },
+            { regex: /(?:место\s*нахождения|адрес)[\s:;=]*([А-ЯЁа-яё0-9\s\-\.,№]{10,200})/gi, type: 'Адрес (полный)' }
+        ]},
+        { id: 'birth_date', name: 'Дата рождения', category: 'personal', enabled: true, patterns: [
+            { regex: /(?:дата\s*рождения|день\s*рождения|д\.?\s*рожд|рожд\.|род\.|рождения|дата\s*рожд)[\s:;=]*(\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4})/gi, type: 'Дата рождения' },
+            { regex: /\b(\d{1,2})[\.\/\-](\d{1,2})[\.\/\-](\d{4})\b/g, type: 'Дата' }
+        ]},
+        { id: 'bank_details', name: 'Банковские реквизиты', category: 'commercial', enabled: true, patterns: [
+            { regex: /(?:р\/?с|расч[её]тн(?:ый)?\s*сч[её]т)[\s:;=\/]*(\d{20})/gi, type: 'Расчётный счёт' },
+            { regex: /(?:к\/?с|корреспондентский\s*сч[её]т)[\s:;=\/]*(\d{20})/gi, type: 'Корр. счёт' },
+            { regex: /БИК[\s:;=]*(\d{9})/gi, type: 'БИК' },
+            { regex: /\b\d{20}\b/g, type: 'Банковский счёт' }
+        ]},
+        { id: 'ogrn', name: 'ОГРН / ОГРНИП', category: 'commercial', enabled: true, patterns: [
+            { regex: /ОГРН[\s:;=]*(\d{13}|\d{15})/gi, type: 'ОГРН' },
+            { regex: /ОГРНИП[\s:;=]*(\d{15})/gi, type: 'ОГРНИП' }
+        ]},
+        { id: 'kpp', name: 'КПП', category: 'commercial', enabled: true, patterns: [
+            { regex: /КПП[\s:;=]*(\d{9})/gi, type: 'КПП' }
+        ]},
+        { id: 'credit_card', name: 'Номера банковских карт', category: 'personal', enabled: true, patterns: [
+            { regex: /\b(?:\d{4}[\s\-]?){3}\d{4}\b/g, type: 'Номер карты' }
+        ]},
+        { id: 'ip_address', name: 'IP-адреса', category: 'technical', enabled: true, patterns: [
+            { regex: /\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b/g, type: 'IP-адрес' }
+        ]},
+        { id: 'mac_address', name: 'MAC-адреса', category: 'technical', enabled: true, patterns: [
+            { regex: /\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b/g, type: 'MAC-адрес' }
+        ]},
+        { id: 'urls', name: 'URL-адреса', category: 'technical', enabled: true, patterns: [
+            { regex: /https?:\/\/[^\s<>"{}|\\^`\[\]]+/g, type: 'URL' }
+        ]},
+        { id: 'company_name', name: 'Названия организаций', category: 'commercial', enabled: true, patterns: [
+            { regex: new RegExp('(?:(?:' + OPF_REGEX_PART + ')\\s*["\u00AB\'\u2018]([^"\u00BB\'\u2019]{2,100})["\u00BB\'\u2019])','gi'), type: 'Организация (ОПФ + кавычки)' },
+            { regex: new RegExp('\\b([А-ЯЁA-Z][А-ЯЁA-Z0-9\\s\\-\\u2013\\u2014]{1,98}[А-ЯЁA-Z0-9])[,]?\\s*(?:' + OPF_REGEX_PART + ')\\b','gi'), type: 'Организация (название + ОПФ)' },
+            { regex: new RegExp('\\b([А-ЯЁA-Z]{1,4}-[А-ЯЁA-Z][А-ЯЁA-Z0-9\\s]{1,97}[А-ЯЁA-Z0-9])[,]?\\s*(?:' + OPF_REGEX_PART + ')\\b','gi'), type: 'Организация (дефисное название)' },
+            { regex: new RegExp('["\u00AB\'\u2018]([^"\u00BB\'\u2019]{2,100})["\u00BB\'\u2019]\\s*\\((?:' + OPF_REGEX_PART + ')\\)','gi'), type: 'Организация (кавычки + скобки)' },
+            { regex: new RegExp('\\b([А-ЯЁ\\s]{3,50})\\s+(?:' + OPF_REGEX_PART + ')\\b','g'), type: 'Организация (только заглавные)' },
+            // International company forms
+            { regex: /\b[A-Z][a-zA-Z0-9\s\-]{2,98}[a-zA-Z0-9]\s+(?:Ltd\.?|Inc\.?|GmbH|S\.A\.?|B\.V\.?|LLP|PLC|Corp\.?)\b/gi, type: 'Организация (международная ОПФ)' },
+            // Additional Russian forms without quotes
+            { regex: /\b(?:АНО|ТСЖ|СНТ|ГБУ|МБУ|ФГБУ|Фонд|Союз|Ассоциация)\s+["\u00AB]?[А-ЯЁA-Z][^"\u00BB]{2,100}["\u00BB]?/gi, type: 'Организация (некоммерческая)' }
+        ]},
+        { id: 'tax_rate', name: 'Налоговые данные', category: 'commercial', enabled: true, patterns: [
+            { regex: /НДС[\s:;=]*(\d+\.?\d*)\s*%?/gi, type: 'НДС' }
+        ]},
+        { id: 'document_numbers', name: 'Номера документов', category: 'technical', enabled: true, patterns: [
+            { regex: /(?:№|номер|договор|приказ|распоряжение)[\s:;=]*(\d+[^\s,.]*)/gi, type: 'Номер документа' }
+        ]},
+        { id: 'vehicle', name: 'Транспортные средства', category: 'personal', enabled: true, patterns: [
+            { regex: /[А-ВЕКМНОРСТУХ]\d{3}\d{2}[А-Я]{2,3}\s*(?:\d{2,3})?/g, type: 'Гос. номер' },
+            { regex: /VIN[\s:;=]*\s*([A-HJ-NPR-Z0-9]{17})/gi, type: 'VIN' }
+        ]},
+        { id: 'medical', name: 'Медицинские данные', category: 'personal', enabled: true, patterns: [
+            { regex: /(?:полис\s*ОМС|номер\s*полиса)[\s:;=]*(\d{16})/gi, type: 'Полис ОМС' }
+        ]},
+        { id: 'uuid', name: 'UUID / GUID', category: 'technical', enabled: true, patterns: [
+            { regex: /\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b/g, type: 'UUID/GUID' }
+        ]},
+        { id: 'hashes', name: 'Хеш-суммы', category: 'technical', enabled: true, patterns: [
+            { regex: /\b[a-fA-F0-9]{32}\b/g, type: 'MD5 хеш' },
+            { regex: /\b[a-fA-F0-9]{64}\b/g, type: 'SHA-256 хеш' }
+        ]},
+        { id: 'api_keys', name: 'API-ключи и токены', category: 'technical', enabled: true, patterns: [
+            { regex: /(?:api[_\-]?key|apikey|api[_\-]?token|token|access[_\-]?token|auth[_\-]?token|secret[_\-]?key|private[_\-]?key)[\s:;=]+["']?([A-Za-z0-9_\-]{20,})["']?/gi, type: 'API-ключ/Токен' },
+            { regex: /\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, type: 'JWT токен' }
+        ]},
+        { id: 'hostnames', name: 'Имена хостов и серверов', category: 'technical', enabled: true, patterns: [
+            { regex: /(?:host|hostname|server|host[_\-]?name)[\s:;=]+["']?([a-zA-Z0-9][a-zA-Z0-9\-\.]{2,})["']?/gi, type: 'Имя хоста' }
+        ]},
+        { id: 'file_paths', name: 'Путя к файлам', category: 'technical', enabled: true, patterns: [
+            { regex: /[A-Z]:\\(?:[^\s<>"|?*]+\\)*[^\s<>"|?*]+/g, type: 'Путь Windows' },
+            { regex: /(?:\/(?:home|Users|usr|var|etc|tmp|opt|srv|root))[\/][^\s<>"']+/g, type: 'Путь Unix' }
+        ]},
+        { id: 'ports', name: 'Порты и соединения', category: 'technical', enabled: true, patterns: [
+            { regex: /(?:port|порт)[\s:;=]+(\d{1,5})/gi, type: 'Порт' },
+            { regex: /\b(?:\d{1,3}\.){3}\d{1,3}:\d{1,5}\b/g, type: 'IP:Порт' }
+        ]},
+        { id: 'usernames_tech', name: 'Имена пользователей', category: 'technical', enabled: true, patterns: [
+            { regex: /(?:user|username|login|логин|user[_\-]?name)[\s:;=]+["']?([a-zA-Z0-9_\-\.]{2,})["']?/gi, type: 'Имя пользователя' },
+            { regex: /(?:password|passwd|pwd|пароль)[\s:;=]+["']?([^\s"'<>]{3,})["']?/gi, type: 'Пароль' }
+        ]},
+        { id: 'git_commits', name: 'Git commit hashes', category: 'technical', enabled: true, patterns: [
+            { regex: /\b[a-f0-9]{7,40}\b/g, type: 'Git commit hash' }
+        ]},
+        { id: 'base64', name: 'Base64 encoded data', category: 'technical', enabled: true, patterns: [
+            { regex: /\b[A-Za-z0-9+/]{20,}={0,2}\b/g, type: 'Base64 data' }
+        ]},
+        { id: 'connection_strings', name: 'Connection strings', category: 'technical', enabled: true, patterns: [
+            { regex: /(?:Server|Data\s+Source|Host|Database|Initial\s+Catalog|User\s+ID|Password|UID|PWD)[\s:;=]+[^\s;]+/gi, type: 'Connection string parameter' },
+            { regex: /(?:mongodb|mysql|postgresql|postgres|redis|amqp|mqtt):\/\/[^\s<>"{}|\\^`\[\]]+/gi, type: 'Database connection URI' }
+        ]},
+        { id: 'environment_vars', name: 'Environment variables', category: 'technical', enabled: true, patterns: [
+            { regex: /\$\{[A-Z_][A-Z0-9_]*\}/g, type: 'Environment variable' },
+            { regex: /\$[A-Z_][A-Z0-9_]*/g, type: 'Environment variable' },
+            { regex: /%[A-Z_][A-Z0-9_]*%/g, type: 'Windows environment variable' }
+        ]},
+        { id: 'session_ids', name: 'Session IDs', category: 'technical', enabled: true, patterns: [
+            { regex: /(?:session[_\-]?id|sessionid|sid|jsessionid|PHPSESSID|ASP\.NET_SessionId)[\s:;=]+["']?([A-Za-z0-9_\-]{10,})["']?/gi, type: 'Session ID' }
+        ]},
+        { id: 'docker_images', name: 'Docker/Container references', category: 'technical', enabled: true, patterns: [
+            { regex: /\b[a-z0-9._-]+\/[a-z0-9._-]+:[a-z0-9._-]+\b/g, type: 'Docker image' },
+            { regex: /(?:docker|container|image|registry)[\s:;=]+[a-z0-9._-]+\/[a-z0-9._-]+/gi, type: 'Docker reference' }
+        ]},
+        { id: 'kubernetes', name: 'Kubernetes resources', category: 'technical', enabled: true, patterns: [
+            { regex: /(?:namespace|cluster|kubeconfig|k8s)[\s:;=]+["']?([a-zA-Z0-9_\-\.]+)["']?/gi, type: 'Kubernetes resource' }
+        ]},
+        { id: 'certificates', name: 'Certificate references', category: 'technical', enabled: true, patterns: [
+            { regex: /-----BEGIN\s+(?:RSA\s+)?(?:CERTIFICATE|PRIVATE\s+KEY|PUBLIC\s+KEY|EC\s+PRIVATE\s+KEY|DSA\s+PRIVATE\s+KEY)-----/g, type: 'Certificate/Key header' },
+            { regex: /-----END\s+(?:RSA\s+)?(?:CERTIFICATE|PRIVATE\s+KEY|PUBLIC\s+KEY|EC\s+PRIVATE\s+KEY|DSA\s+PRIVATE\s+KEY)-----/g, type: 'Certificate/Key footer' }
+        ]},
+        { id: 'log_patterns', name: 'Log file patterns', category: 'technical', enabled: true, patterns: [
+            { regex: /\b\d{4}[\-\/]\d{2}[\-\/]\d{2}[T\s]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+\-]\d{2}:?\d{2})?\b/g, type: 'Timestamp' },
+            { regex: /\b(?:ERROR|WARN|WARNING|INFO|DEBUG|FATAL|CRITICAL|TRACE)\b/g, type: 'Log level' },
+            { regex: /\[(?:ERROR|WARN|WARNING|INFO|DEBUG|FATAL|CRITICAL|TRACE)\]/g, type: 'Log level (bracketed)' }
+        ]}
+    ];
+
+    // ==================== TEMPLATES (multi-select) ====================
+    var templates = [
+        { id: 'full', name: 'Полное маскирование', description: 'Все правила включены. Максимальная защита данных.', icon: '🛡️', rules: defaultRules.map(function(r){ return r.id; }), mode: 'preserve', category: 'all' },
+        { id: 'personal', name: 'Персональные данные', description: 'ФИО, паспорт, СНИЛС, ИНН, телефон, email, адрес.', icon: '👤', rules: ['russian_names','phone','email','inn','snils','passport','address','birth_date','credit_card','vehicle','medical','usernames_tech'], mode: 'preserve', category: 'personal' },
+        { id: 'commercial', name: 'Коммерческая тайна', description: 'Банковские реквизиты, ОГРН, КПП, ИНН, организации, налоги.', icon: '🏢', rules: ['inn','bank_details','ogrn','kpp','company_name','tax_rate','document_numbers'], mode: 'preserve', category: 'commercial' },
+        { id: 'technical', name: 'Технические данные', description: 'IP, MAC, URL, UUID, хеши, API-ключи, пути, порты, Git, Base64, connection strings.', icon: '💻', rules: ['ip_address','mac_address','urls','document_numbers','uuid','hashes','api_keys','hostnames','file_paths','ports','usernames_tech','git_commits','base64','connection_strings','environment_vars','session_ids','docker_images','kubernetes','certificates','log_patterns'], mode: 'replace', category: 'technical' },
+        { id: 'minimal', name: 'Минимальное', description: 'Только телефон и email.', icon: '📧', rules: ['phone','email'], mode: 'partial', category: 'minimal' },
+        { id: 'listmask', name: 'Маскирование по списку', description: 'Использует загруженные файлы-списки для точного поиска и замены значений.', icon: '📋', rules: [], mode: 'preserve', isListTemplate: true, category: 'list' }
+    ];
+
+    // ==================== INIT ====================
+    function init() {
+        loadSettings();
+        if (!state.activeTemplates || state.activeTemplates.length === 0) state.activeTemplates = ['full'];
+        Promise.all([detectUser(), detectUserIP(), detectInternalIP()]).then(function(){ initApp(); });
+    }
+    function initApp() {
+        applyMultiTemplates();
+        renderTemplates();
+        renderSettings();
+        renderCustomPatterns();
+        renderColumnSettings();
+        setupDragDrop();
+        setupListDragDrop();
+    }
+    function loadSettings() {
+        try {
+            var saved = localStorage.getItem('masking_settings');
+            if (saved) {
+                var parsed = JSON.parse(saved);
+                state.settings = parsed.rules || {};
+                state.maskChar = parsed.maskChar || '*';
+                state.maskMode = parsed.maskMode || 'preserve';
+                state.customPatterns = parsed.customPatterns || [];
+                state.activeTemplate = parsed.activeTemplate || 'full';
+                state.activeTemplates = parsed.activeTemplates || ['full'];
+                state.removeMetadata = parsed.removeMetadata !== undefined ? parsed.removeMetadata : true;
+                state.customCommercialColumns = parsed.customCommercialColumns || [];
+                state.customPersonalColumns = parsed.customPersonalColumns || [];
+                state.excludedColumns = parsed.excludedColumns || [];
+            }
+        } catch(e){}
+    }
+    function saveSettings() {
+        var rules = {};
+        var toggles = document.querySelectorAll('.rule-toggle');
+        for (var i = 0; i < toggles.length; i++) rules[toggles[i].getAttribute('data-rule-id')] = toggles[i].checked;
+        state.settings = rules;
+        state.maskChar = document.getElementById('maskChar').value || '*';
+        state.maskMode = document.getElementById('maskMode').value;
+        state.removeMetadata = document.getElementById('removeMetadata').checked;
+        localStorage.setItem('masking_settings', JSON.stringify({
+            rules: state.settings, maskChar: state.maskChar, maskMode: state.maskMode,
+            customPatterns: state.customPatterns, activeTemplate: state.activeTemplate,
+            activeTemplates: state.activeTemplates, removeMetadata: state.removeMetadata,
+            customCommercialColumns: state.customCommercialColumns, customPersonalColumns: state.customPersonalColumns,
+            excludedColumns: state.excludedColumns
+        }));
+        showNotification('Настройки сохранены');
+    }
+    function resetAllSettings() {
+        state.settings = {}; state.maskChar = '*'; state.maskMode = 'preserve'; state.customPatterns = [];
+        state.activeTemplate = 'full'; state.activeTemplates = ['full']; state.removeMetadata = true;
+        state.customCommercialColumns = []; state.customPersonalColumns = []; state.excludedColumns = [];
+        applyMultiTemplates();
+        var mdToggle = document.getElementById('removeMetadata'); if (mdToggle) mdToggle.checked = true;
+        var mdToggleVis = document.getElementById('removeMetadataToggle');
+        if (mdToggleVis) { mdToggleVis.classList.remove('toggle-off'); mdToggleVis.classList.add('toggle-on'); }
+        renderColumnSettings();
+    }
+
+    // ==================== MULTI-TEMPLATE LOGIC ====================
+    function toggleTemplate(templateId) {
+        var idx = state.activeTemplates.indexOf(templateId);
+        if (idx !== -1) {
+            if (state.activeTemplates.length > 1) state.activeTemplates.splice(idx, 1);
+            else { showNotification('Должен быть выбран хотя бы один шаблон', 'error'); return; }
+        } else {
+            state.activeTemplates.push(templateId);
+        }
+        applyMultiTemplates();
+        renderTemplates();
+    }
+    function selectAllTemplates() {
+        state.activeTemplates = ['full','personal','commercial','technical','minimal'];
+        applyMultiTemplates();
+        renderTemplates();
+    }
+    function clearAllTemplates() {
+        state.activeTemplates = [];
+        applyMultiTemplates();
+        renderTemplates();
+    }
+    function applyMultiTemplates() {
+        var allRuleIds = [];
+        for (var t = 0; t < state.activeTemplates.length; t++) {
+            var tmpl = null;
+            for (var i = 0; i < templates.length; i++) { if (templates[i].id === state.activeTemplates[t]) { tmpl = templates[i]; break; } }
+            if (tmpl && tmpl.rules) {
+                for (var r = 0; r < tmpl.rules.length; r++) {
+                    if (allRuleIds.indexOf(tmpl.rules[r]) === -1) allRuleIds.push(tmpl.rules[r]);
+                }
+            }
+        }
+        // Update toggle states in settings
+        for (var i = 0; i < defaultRules.length; i++) {
+            state.settings[defaultRules[i].id] = allRuleIds.indexOf(defaultRules[i].id) !== -1;
+        }
+        // Apply mode from first template
+        if (state.activeTemplates.length > 0) {
+            var firstTmpl = null;
+            for (var i = 0; i < templates.length; i++) { if (templates[i].id === state.activeTemplates[0]) { firstTmpl = templates[i]; break; } }
+            if (firstTmpl) state.maskMode = firstTmpl.mode;
+        }
+        var modeSelect = document.getElementById('maskMode');
+        if (modeSelect) modeSelect.value = state.maskMode;
+    }
+    function getActiveRulesFromTemplates() {
+        // Returns union of all rules from active templates
+        var activeRuleIds = [];
+        for (var t = 0; t < state.activeTemplates.length; t++) {
+            var tmpl = null;
+            for (var i = 0; i < templates.length; i++) { if (templates[i].id === state.activeTemplates[t]) { tmpl = templates[i]; break; } }
+            if (tmpl && tmpl.rules) {
+                for (var r = 0; r < tmpl.rules.length; r++) {
+                    if (activeRuleIds.indexOf(tmpl.rules[r]) === -1) activeRuleIds.push(tmpl.rules[r]);
+                }
+            }
+        }
+        return defaultRules.filter(function(rule) { return activeRuleIds.indexOf(rule.id) !== -1; });
+    }
+
+    // ==================== RENDER FUNCTIONS ====================
+    function renderSettings() {
+        var container = document.getElementById('settingsContainer');
+        if (!container) return;
+        var categories = { personal: { name: '🔒 Персональные данные', rules: [] }, commercial: { name: '🏢 Коммерческие данные', rules: [] }, technical: { name: '💻 Технические данные', rules: [] } };
+        for (var i = 0; i < defaultRules.length; i++) { var rule = defaultRules[i]; if (categories[rule.category]) categories[rule.category].rules.push(rule); }
+        var html = '';
+        var catKeys = Object.keys(categories);
+        for (var c = 0; c < catKeys.length; c++) {
+            var catKey = catKeys[c]; var cat = categories[catKey];
+            html += '<div class="glass rounded-xl p-5">';
+            html += '<h3 class="text-lg font-bold text-white mb-4">' + cat.name + '</h3>';
+            html += '<div class="space-y-3">';
+            for (var r = 0; r < cat.rules.length; r++) {
+                var rule = cat.rules[r];
+                var enabled = state.settings[rule.id] !== undefined ? state.settings[rule.id] : rule.enabled;
+                html += '<div class="flex items-center justify-between py-2 border-b border-slate-700/50 last:border-0">';
+                html += '<div class="flex-1"><p class="text-sm font-medium text-slate-200">' + rule.name + '</p><p class="text-xs text-slate-500">' + rule.patterns.length + ' паттерн(ов)</p></div>';
+                html += '<label class="relative inline-flex items-center cursor-pointer">';
+                html += '<input type="checkbox" class="sr-only rule-toggle" data-rule-id="' + rule.id + '" ' + (enabled ? 'checked' : '') + ' onchange="this.nextElementSibling.classList.toggle(\'toggle-on\'); this.nextElementSibling.classList.toggle(\'toggle-off\')">';
+                html += '<div class="w-11 h-6 rounded-full ' + (enabled ? 'toggle-on' : 'toggle-off') + ' transition-colors"></div>';
+                html += '</label></div>';
+            }
+            html += '</div></div>';
+        }
+        container.innerHTML = html;
+        var maskCharInput = document.getElementById('maskChar'); if (maskCharInput) maskCharInput.value = state.maskChar;
+        var maskModeSelect = document.getElementById('maskMode'); if (maskModeSelect) maskModeSelect.value = state.maskMode;
+        var removeMetaInput = document.getElementById('removeMetadata'); if (removeMetaInput) removeMetaInput.checked = state.removeMetadata;
+        var removeMetaToggle = document.getElementById('removeMetadataToggle');
+        if (removeMetaToggle) { if (state.removeMetadata) { removeMetaToggle.classList.add('toggle-on'); removeMetaToggle.classList.remove('toggle-off'); } else { removeMetaToggle.classList.add('toggle-off'); removeMetaToggle.classList.remove('toggle-on'); } }
+    }
+    function renderTemplates() {
+        var container = document.getElementById('templatesContainer');
+        if (!container) return;
+        var html = '';
+        for (var i = 0; i < templates.length; i++) {
+            var t = templates[i];
+            var isActive = state.activeTemplates.indexOf(t.id) !== -1;
+            var isListTemplate = t.isListTemplate;
+            var cardClass = isActive ? (isListTemplate ? 'template-list-active' : 'template-active') : '';
+            var iconClass = isListTemplate ? 'text-emerald-400' : '';
+            html += '<div class="glass rounded-xl p-5 cursor-pointer transition-all hover:scale-[1.02] ' + cardClass + '" onclick="toggleTemplate(\'' + t.id + '\')">';
+            html += '<div class="flex items-start justify-between mb-3">';
+            html += '<div class="text-3xl ' + iconClass + '">' + t.icon + '</div>';
+            html += '<div class="flex items-center h-6">';
+            html += '<div class="w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ' + (isActive ? 'bg-indigo-500 border-indigo-500' : 'border-slate-500') + '">';
+            if (isActive) html += '<svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>';
+            html += '</div></div></div>';
+            html += '<h3 class="text-lg font-bold text-white mb-2">' + t.name + '</h3>';
+            html += '<p class="text-sm text-slate-400 mb-3">' + t.description + '</p>';
+            if (isListTemplate) {
+                var listCount = state.listFiles.length;
+                var totalValues = 0; state.listData.forEach(function(set){ totalValues += set.size; });
+                html += '<div class="flex flex-wrap gap-1 mb-3">';
+                html += '<span class="text-xs bg-emerald-900/30 text-emerald-300 px-2 py-1 rounded">' + listCount + ' файлов</span>';
+                html += '<span class="text-xs bg-emerald-900/30 text-emerald-300 px-2 py-1 rounded">' + totalValues + ' значений</span></div>';
+                if (listCount === 0) html += '<p class="text-xs text-amber-400">⚠️ Загрузите файлы-списки</p>';
+            } else {
+                html += '<div class="flex flex-wrap gap-1">';
+                for (var j = 0; j < Math.min(t.rules.length, 4); j++) { html += '<span class="text-xs bg-indigo-900/30 text-indigo-300 px-2 py-1 rounded">' + t.rules[j] + '</span>'; }
+                if (t.rules.length > 4) html += '<span class="text-xs bg-slate-700 text-slate-400 px-2 py-1 rounded">+' + (t.rules.length - 4) + '</span>';
+                html += '</div>';
+            }
+            if (isActive) html += '<div class="mt-3 ' + (isListTemplate ? 'text-emerald-400' : 'text-indigo-400') + ' text-sm font-semibold">✓ Активен</div>';
+            html += '</div>';
+        }
+        container.innerHTML = html;
+    }
+    function updateMaskChar(val){ state.maskChar = val || '*'; }
+    function updateMaskMode(val){ state.maskMode = val; }
+    function updateMetadataSetting(checked){
+        state.removeMetadata = checked;
+        var toggle = document.getElementById('removeMetadataToggle');
+        if (toggle) { if (checked) { toggle.classList.add('toggle-on'); toggle.classList.remove('toggle-off'); } else { toggle.classList.add('toggle-off'); toggle.classList.remove('toggle-on'); } }
+    }
+    function addCustomPattern() { state.customPatterns.push({ id: 'custom_' + Date.now(), name: 'Новый паттерн', regex: '', enabled: true, type: 'Пользовательский' }); renderCustomPatterns(); }
+    function renderCustomPatterns() {
+        var container = document.getElementById('customPatterns'); if (!container) return;
+        var html = '';
+        for (var i = 0; i < state.customPatterns.length; i++) {
+            var p = state.customPatterns[i];
+            html += '<div class="glass-light rounded-lg p-4 grid grid-cols-1 md:grid-cols-4 gap-3 items-end">';
+            html += '<div><label class="block text-xs text-slate-400 mb-1">Название</label>';
+            html += '<input type="text" value="' + p.name + '" class="w-full bg-slate-700/50 border border-slate-600 rounded px-3 py-2 text-sm text-white" onchange="state.customPatterns[' + i + '].name=this.value"></div>';
+            html += '<div class="md:col-span-2"><label class="block text-xs text-slate-400 mb-1">Regex</label>';
+            html += '<input type="text" value="' + p.regex + '" class="w-full bg-slate-700/50 border border-slate-600 rounded px-3 py-2 text-sm text-white regex-input" placeholder="\\b\\d{10}\\b" onchange="state.customPatterns[' + i + '].regex=this.value"></div>';
+            html += '<div class="flex gap-2"><button onclick="removeCustomPattern(' + i + ')" class="bg-red-900/30 hover:bg-red-900/50 text-red-300 px-3 py-2 rounded text-sm transition">Удалить</button></div>';
+            html += '</div>';
+        }
+        container.innerHTML = html;
+    }
+    function removeCustomPattern(index) { state.customPatterns.splice(index, 1); renderCustomPatterns(); }
+
+    // ==================== DRAG & DROP ====================
+    function setupDragDrop() {
+        var dropZone = document.getElementById('dropZone'); if (!dropZone) return;
+        dropZone.addEventListener('dragenter', function(e){ e.preventDefault(); e.stopPropagation(); dropZone.classList.add('drag-over'); });
+        dropZone.addEventListener('dragover', function(e){ e.preventDefault(); e.stopPropagation(); dropZone.classList.add('drag-over'); });
+        dropZone.addEventListener('dragleave', function(e){ e.preventDefault(); e.stopPropagation(); dropZone.classList.remove('drag-over'); });
+        dropZone.addEventListener('drop', function(e){ e.preventDefault(); e.stopPropagation(); dropZone.classList.remove('drag-over'); handleFiles(e.dataTransfer.files); });
+    }
+    function setupListDragDrop() {
+        var dropZone = document.getElementById('listDropZone'); if (!dropZone) return;
+        dropZone.addEventListener('dragenter', function(e){ e.preventDefault(); e.stopPropagation(); dropZone.classList.add('drag-over'); });
+        dropZone.addEventListener('dragover', function(e){ e.preventDefault(); e.stopPropagation(); dropZone.classList.add('drag-over'); });
+        dropZone.addEventListener('dragleave', function(e){ e.preventDefault(); e.stopPropagation(); dropZone.classList.remove('drag-over'); });
+        dropZone.addEventListener('drop', function(e){ e.preventDefault(); e.stopPropagation(); dropZone.classList.remove('drag-over'); handleListFiles(e.dataTransfer.files); });
+    }
+
+    // ==================== LIST FILES ====================
+    async function handleListFiles(fileList) {
+        var remaining = 10 - state.listFiles.length;
+        var filesArr = Array.from(fileList).slice(0, remaining);
+        for (var i = 0; i < filesArr.length; i++) {
+            var file = filesArr[i]; var ext = file.name.split('.').pop().toLowerCase();
+            if (ext !== 'txt') { showNotification('Файл-список должен быть в формате .txt', 'error'); continue; }
+            if (file.size > MAX_FILE_SIZE) { showNotification('Файл "' + file.name + '" превышает лимит 100 МБ', 'error'); continue; }
+            try { var content = await file.text(); var values = parseListFile(content);
+                state.listFiles.push({ id: Date.now() + Math.random(), name: file.name, size: file.size, valueCount: values.size });
+                state.listData.set(file.name, values);
+                // Add company names to trie for fast lookup
+                values.forEach(function(v){ if (v.length > 3) { companyNameTrie.insert(v); listBasedCompanyNames.add(v.toLowerCase()); } });
+            } catch(e) { showNotification('Ошибка чтения файла "' + file.name + '"', 'error'); }
+        }
+        if (state.listFiles.length > 10) { var excess = state.listFiles.slice(10); excess.forEach(function(f){ state.listData.delete(f.name); }); state.listFiles = state.listFiles.slice(0, 10); }
+        renderListFiles(); renderTemplates(); showNotification('Файлы-списки загружены: ' + state.listFiles.length);
+    }
+    function parseListFile(content) {
+        var values = new Set();
+        var normalizedContent = content.replace(/^\uFEFF/, '').normalize('NFC');
+        var lines = normalizedContent.split(/\r?\n/);
+        for (var i = 0; i < lines.length; i++) { var line = lines[i].trim().replace(/\s+/g, ' '); if (line.length > 0) values.add(line); }
+        return values;
+    }
+    function renderListFiles() {
+        var container = document.getElementById('listFileList'); var counter = document.getElementById('listFileCounter');
+        var countEl = document.getElementById('listFileCount'); var infoSection = document.getElementById('listFilesInfo');
+        var statsContainer = document.getElementById('listFilesStats'); if (!container) return;
+        counter.classList.remove('hidden'); countEl.textContent = state.listFiles.length;
+        if (state.listFiles.length === 0) { container.innerHTML = ''; infoSection.classList.add('hidden'); return; }
+        infoSection.classList.remove('hidden');
+        var html = '';
+        for (var i = 0; i < state.listFiles.length; i++) {
+            var f = state.listFiles[i]; var sizeStr = formatSize(f.size);
+            html += '<div class="file-card list-file-card rounded-xl p-4 flex items-center gap-4">';
+            html += '<div class="text-2xl">📋</div><div class="flex-1 min-w-0"><p class="text-sm font-medium text-white truncate">' + f.name + '</p>';
+            html += '<p class="text-xs text-slate-500">' + sizeStr + ' · ' + f.valueCount + ' значений</p></div>';
+            html += '<div class="flex items-center gap-2"><span class="list-badge text-white text-xs px-2 py-1 rounded-full">' + f.valueCount + '</span>';
+            html += '<button onclick="removeListFile(' + i + ')" class="text-slate-500 hover:text-red-400 transition"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></div></div>';
+        }
+        container.innerHTML = html;
+        var totalValues = 0; var allValues = new Set();
+        state.listData.forEach(function(set){ totalValues += set.size; set.forEach(function(v){ allValues.add(v); }); });
+        var statsHtml = '<div class="stat-card rounded-xl p-4 text-center"><div class="text-2xl font-bold text-emerald-400">' + state.listFiles.length + '</div><div class="text-xs text-slate-400">Файлов-списков</div></div>';
+        statsHtml += '<div class="stat-card rounded-xl p-4 text-center"><div class="text-2xl font-bold text-emerald-400">' + totalValues + '</div><div class="text-xs text-slate-400">Всего значений</div></div>';
+        statsHtml += '<div class="stat-card rounded-xl p-4 text-center"><div class="text-2xl font-bold text-emerald-400">' + allValues.size + '</div><div class="text-xs text-slate-400">Уникальных значений</div></div>';
+        statsContainer.innerHTML = statsHtml;
+    }
+    function removeListFile(index) { var fileName = state.listFiles[index].name; state.listData.delete(fileName); state.listFiles.splice(index, 1); renderListFiles(); renderTemplates(); }
+    function clearAllListFiles() { state.listFiles = []; state.listData.clear(); listBasedCompanyNames.clear(); renderListFiles(); renderTemplates(); }
+
+    // ==================== FILE HANDLING ====================
+    function handleFiles(fileList) {
+        var remaining = 10 - state.files.length;
+        var filesArr = Array.from(fileList).slice(0, remaining);
+        for (var i = 0; i < filesArr.length; i++) {
+            var file = filesArr[i]; var ext = file.name.split('.').pop().toLowerCase();
+            var allowedExts = ['docx','xlsx','xlsb','txt','csv','json','xml','log','sql','yaml','yml','ini','md'];
+            if (allowedExts.indexOf(ext) === -1) { showNotification('Формат .' + ext + ' не поддерживается', 'error'); continue; }
+            if (file.size > MAX_FILE_SIZE) { showNotification('Файл "' + file.name + '" превышает лимит 100 МБ', 'error'); continue; }
+            state.files.push({ id: Date.now() + Math.random(), name: file.name, size: file.size, ext: ext, file: file, status: 'pending' });
+        }
+        if (state.files.length > 10) state.files = state.files.slice(0, 10);
+        renderFileList();
+    }
+    function renderFileList() {
+        var container = document.getElementById('fileList'); var counter = document.getElementById('fileCounter');
+        var countEl = document.getElementById('fileCount'); var processSection = document.getElementById('processSection');
+        counter.classList.remove('hidden'); countEl.textContent = state.files.length;
+        if (state.files.length === 0) { container.innerHTML = ''; processSection.classList.add('hidden'); return; }
+        processSection.classList.remove('hidden');
+        var html = '';
+        for (var i = 0; i < state.files.length; i++) {
+            var f = state.files[i]; var icon = getFileIcon(f.ext); var sizeStr = formatSize(f.size);
+            html += '<div class="file-card glass rounded-xl p-4 flex items-center gap-4">';
+            html += '<div class="text-2xl">' + icon + '</div><div class="flex-1 min-w-0"><p class="text-sm font-medium text-white truncate">' + f.name + '</p>';
+            html += '<p class="text-xs text-slate-500">' + sizeStr + ' · ' + f.ext.toUpperCase() + '</p></div>';
+            html += '<div class="flex items-center gap-2">';
+            var statusClass = f.status === 'done' ? 'bg-green-900/30 text-green-400' : f.status === 'error' ? 'bg-red-900/30 text-red-400' : 'bg-slate-700 text-slate-400';
+            var statusText = f.status === 'done' ? '✓ Готов' : f.status === 'error' ? '✗ Ошибка' : 'Ожидание';
+            html += '<span class="text-xs px-2 py-1 rounded ' + statusClass + '">' + statusText + '</span>';
+            html += '<button onclick="removeFile(' + i + ')" class="text-slate-500 hover:text-red-400 transition"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></div></div>';
+        }
+        container.innerHTML = html;
+    }
+    function removeFile(index) { state.files.splice(index, 1); renderFileList(); }
+    function clearAllFiles() { state.files = []; state.processedFiles = []; state.changes = {}; renderFileList(); document.getElementById('resultsSection').classList.add('hidden'); }
+    function getFileIcon(ext) { var icons = { docx: '📄', xlsx: '📊', txt: '📝', csv: '📋', json: '🔗', xml: '📰', log: '📋', sql: '🗃️', yaml: '⚙️', yml: '⚙️', ini: '🔧', md: '📑' }; return icons[ext] || '📄'; }
+    function formatSize(bytes) { if (bytes < 1024) return bytes + ' Б'; if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' КБ'; return (bytes / 1048576).toFixed(1) + ' МБ'; }
+
+    // ==================== PROCESSING OVERLAY ====================
+    // ==================== ETA & STEP TRACKING ====================
+    var processingStartTime = 0; // timestamp when current file processing started
+    var overallStartTime = 0;    // timestamp when batch processing started
+
+    /**
+     * Returns human-readable ETA based on elapsed time and progress
+     */
+    function calculateETA(progressPercent, startTime) {
+        if (!startTime || progressPercent <= 0) return 'расчёт...';
+        if (progressPercent >= 100) return 'завершено';
+        var elapsed = Date.now() - startTime;
+        var estimatedTotal = elapsed / (progressPercent / 100);
+        var remaining = estimatedTotal - elapsed;
+        if (remaining < 1000) return '< 1 сек';
+        if (remaining < 60000) return Math.ceil(remaining / 1000) + ' сек';
+        var mins = Math.floor(remaining / 60000);
+        var secs = Math.ceil((remaining % 60000) / 1000);
+        return mins + ' мин ' + secs + ' сек';
+    }
+
+    /**
+     * Maps processing progress ranges to human-readable step descriptions
+     */
+    function getStepDescription(progress, ext, isStreaming) {
+        var mode = isStreaming ? ' (потоковый режим)' : '';
+        if (ext === 'docx') {
+            if (progress < 20) return 'Чтение ZIP-архива DOCX...';
+            if (progress < 50) return 'Маскирование текста документа...';
+            if (progress < 75) return 'Обработка колонтитулов и сносок...';
+            if (progress < 90) return 'Очистка метаданных...';
+            return 'Сборка и сжатие файла...';
+        }
+        if (ext === 'xlsx') {
+            if (progress < 20) return 'Чтение рабочей книги Excel...';
+            if (progress < 40) return 'Анализ столбцов (самообучение)...';
+            if (progress < 85) return 'Маскирование ячеек...';
+            if (progress < 95) return 'Очистка метаданных...';
+            return 'Сохранение файла...';
+        }
+        // Text files
+        if (isStreaming) {
+            if (progress < 10) return 'Нарезка файла на части...';
+            if (progress < 90) return 'Потоковое маскирование фрагментов...';
+            return 'Сборка результата...';
+        }
+        if (progress < 30) return 'Загрузка содержимого...';
+        if (progress < 90) return 'Маскирование данных...';
+        return 'Финализация...';
+    }
+
+    function showProcessingOverlay(fileName, progress, stepDesc, etaText) {
+        var overlay = document.getElementById('processingOverlay');
+        var fileText = document.getElementById('processingFile');
+        var stepText = document.getElementById('processingStep');
+        var etaDisplay = document.getElementById('processingETA');
+        var progressBar = document.getElementById('progressBar');
+        var progressText = document.getElementById('progressText');
+        overlay.classList.add('active');
+        fileText.textContent = fileName || '';
+        if (stepText) stepText.textContent = stepDesc || '';
+        if (etaDisplay) etaDisplay.textContent = etaText ? '⏱ Осталось: ' + etaText : '';
+        progressBar.style.width = (progress || 0) + '%';
+        progressText.textContent = Math.round(progress || 0) + '%';
+    }
+    function hideProcessingOverlay() { var overlay = document.getElementById('processingOverlay'); overlay.classList.remove('active'); }
+
+    // ==================== MAIN PROCESSING ====================
+    async function processAllFiles() {
+        if (state.files.length === 0) { showNotification('Загрузите файлы для обработки', 'error'); return; }
+        if (state.activeTemplates.indexOf('listmask') !== -1 && state.listFiles.length === 0) { showNotification('Для шаблона "Маскирование по списку" загрузите файлы-списки', 'error'); switchTab('listfiles'); return; }
+        if (state.isProcessing) return; state.isProcessing = true;
+        var oversizedFiles = state.files.filter(function(f){ return f.size > MAX_FILE_SIZE; });
+        if (oversizedFiles.length > 0) { showNotification(oversizedFiles.length + ' файл(ов) превышает лимит 100 МБ', 'error'); state.isProcessing = false; return; }
+        var processStatus = document.getElementById('processStatus'); processStatus.textContent = 'Обработка...';
+        state.processedFiles = []; state.changes = {};
+        overallStartTime = Date.now();
+        var hasLargeFile = state.files.some(function(f){ return f.size > LARGE_FILE_THRESHOLD; });
+        for (var i = 0; i < state.files.length; i++) {
+            var fileObj = state.files[i]; processingStartTime = Date.now();
+            processStatus.textContent = 'Обработка ' + (i + 1) + '/' + state.files.length + ': ' + fileObj.name;
+            var overallProgress = ((i) / state.files.length) * 100;
+            var overallETA = calculateETA(overallProgress, overallStartTime);
+            if (hasLargeFile || fileObj.size > LARGE_FILE_THRESHOLD) {
+                showProcessingOverlay('Файл ' + (i + 1) + '/' + state.files.length + ': ' + fileObj.name, overallProgress, 'Подготовка...', overallETA);
+            }
+            try { var result = await processFileWithYield(fileObj, i, state.files.length); state.processedFiles.push(result); state.changes[fileObj.name] = result.changes; fileObj.status = 'done'; }
+            catch(e) { console.error('Ошибка обработки:', e); fileObj.status = 'error'; state.processedFiles.push({ name: fileObj.name, ext: fileObj.ext, content: null, changes: [], error: e.message }); }
+            await new Promise(function(resolve){ setTimeout(resolve, 10); });
+        }
+        hideProcessingOverlay(); renderFileList(); renderResults(); processStatus.textContent = 'Обработано ' + state.processedFiles.length + ' файлов'; state.isProcessing = false;
+    }
+    async function processFileWithYield(fileObj, fileIndex, totalFiles) {
+        var changes = []; var baseProgress = (fileIndex / totalFiles) * 100;
+        var ext = fileObj.ext;
+
+        // Helper to build overlay with ETA and step description
+        function updateOverlay(fileProgress, isStreaming) {
+            var overallProgress = Math.min(99.9, baseProgress + (fileProgress / totalFiles));
+            var eta = calculateETA(fileProgress, processingStartTime);
+            var overallETA = calculateETA(overallProgress, overallStartTime);
+            var step = getStepDescription(fileProgress, ext, isStreaming);
+            var fileLabel = 'Файл ' + (fileIndex + 1) + '/' + totalFiles + ': ' + fileObj.name;
+            var etaStr = overallETA;
+            if (fileProgress > 0 && fileProgress < 100) {
+                etaStr = 'файл ~' + eta + ' · всего ~' + overallETA;
+            }
+            showProcessingOverlay(fileLabel, overallProgress, step, etaStr);
+        }
+
+        updateOverlay(0, false);
+
+        if (ext === 'docx') {
+            var useStreaming = fileObj.size > LARGE_FILE_THRESHOLD;
+            var result;
+            if (useStreaming) {
+                result = await processDocxStreamed(fileObj.file, fileObj.name, changes, function(p){
+                    updateOverlay(p, true);
+                });
+            } else {
+                result = await processDocxWithYield(fileObj.file, fileObj.name, changes, function(p){
+                    updateOverlay(p, false);
+                });
+            }
+            return { name: fileObj.name, ext: ext, blob: result, changes: changes, streamed: useStreaming };
+        }
+		else if (ext === 'xlsx' || ext === 'xlsb') {
+		  var useStreaming = fileObj.size > LARGE_FILE_THRESHOLD;
+		  var result;
+		  if (useStreaming) {
+			result = await processXlsxStreamed(fileObj.file, fileObj.name, ext, changes, p => updateOverlay(p, true));
+		  } else {
+			result = await processXlsxWithYield(fileObj.file, fileObj.name, ext, changes, p => updateOverlay(p, false));
+		  }
+		   return { name: fileObj.name, ext, blob: result, changes, streamed: useStreaming };
+		}
+        else {
+            var textExts = ['txt','csv','json','xml','log','sql','yaml','yml','ini','md'];
+            var useStreaming = fileObj.size > STREAMING_FILE_THRESHOLD && textExts.indexOf(ext) !== -1;
+
+            if (useStreaming) {
+                var blob = await processTextFileStreamed(fileObj.file, fileObj.name, changes, function(p){
+                    updateOverlay(p, true);
+                });
+                return { name: fileObj.name, ext: ext, blob: blob, changes: changes, content: null, streamed: true };
+            } else {
+                var text = await fileObj.file.text();
+                updateOverlay(30, false);
+                var masked;
+                if (text.length > 50000) {
+                    masked = await maskTextChunked(text, fileObj.name, changes, function(p){
+                        updateOverlay(30 + p * 0.6, false);
+                    });
+                } else {
+                    masked = await maskTextAsync(text, fileObj.name, changes);
+                }
+                updateOverlay(95, false);
+								var utf8Bom = '\ufeff';
+				var blob = new Blob([utf8Bom, masked], {
+				  type: 'text/plain;charset=utf-8'
+				});
+				
+                return { name: fileObj.name, ext: ext, blob: blob, changes: changes, content: masked, streamed: false };
+            }
+        }
+    }
+    // ==================== CHUNKED TEXT MASKING ====================
+    async function maskTextChunked(text, fileName, changes, progressCallback) {
+        var result = ''; var totalLength = text.length; var processedLength = 0;
+        var chunkIndex = 0; var totalChunks = Math.ceil(totalLength / CHUNK_SIZE);
+        while (processedLength < totalLength) {
+            var chunkEnd = Math.min(processedLength + CHUNK_SIZE, totalLength);
+            var chunk = text.substring(processedLength, chunkEnd);
+            var maskedChunk = await maskTextAsync(chunk, fileName, changes);
+            result += maskedChunk; processedLength = chunkEnd; chunkIndex++;
+            if (progressCallback) progressCallback((chunkIndex / totalChunks) * 100);
+            await new Promise(function(resolve){ setTimeout(resolve, 1); });
+        }
+        return result;
+    }
+    async function maskTextAsync(text, fileName, changes) { if (!text) return text; return await maskTextInternal(text, fileName, changes); }
+
+    // ==================== DOCX PROCESSING ====================
+    async function processDocxWithYield(file, fileName, changes, progressCallback) {
+        var arrayBuffer = await file.arrayBuffer(); if (progressCallback) progressCallback(10);
+        var zip = await JSZip.loadAsync(arrayBuffer); if (progressCallback) progressCallback(20);
+        var docXmlEntry = zip.file('word/document.xml');
+        if (docXmlEntry) {
+            var docXml = await docXmlEntry.async('string'); if (progressCallback) progressCallback(30);
+            var maskedXml; if (docXml.length > 20000) { maskedXml = await maskDocxXmlAsync(docXml, fileName, changes, function(p){ if (progressCallback) progressCallback(30 + (p * 0.15)); }); } else { maskedXml = maskDocxXml(docXml, fileName, changes); }
+            zip.file('word/document.xml', maskedXml, { compression: 'DEFLATE', compressionOptions: { level: 6 } });
+        }
+        if (progressCallback) progressCallback(50);
+        var headerFooterFiles = zip.file(/^word\/(header|footer)\d+\.xml$/);
+        for (var i = 0; i < headerFooterFiles.length; i++) {
+            var hfFile = headerFooterFiles[i]; var hfXml = await hfFile.async('string'); var maskedHfXml;
+            if (hfXml.length > 20000) maskedHfXml = await maskDocxXmlAsync(hfXml, fileName, changes); else maskedHfXml = maskDocxXml(hfXml, fileName, changes);
+            zip.file(hfFile.name, maskedHfXml, { compression: 'DEFLATE', compressionOptions: { level: 6 } });
+            if (i % 2 === 0) await new Promise(function(resolve){ setTimeout(resolve, 5); });
+        }
+        if (progressCallback) progressCallback(70);
+        var noteFiles = zip.file(/^word\/(footnotes|endnotes)\.xml$/);
+        for (var i = 0; i < noteFiles.length; i++) {
+            var noteFile = noteFiles[i]; var noteXml = await noteFile.async('string'); var maskedNoteXml;
+            if (noteXml.length > 50000) maskedNoteXml = await maskDocxXmlAsync(noteXml, fileName, changes); else maskedNoteXml = maskDocxXml(noteXml, fileName, changes);
+            zip.file(noteFile.name, maskedNoteXml, { compression: 'DEFLATE', compressionOptions: { level: 6 } });
+        }
+        if (progressCallback) progressCallback(80);
+        var settingsXml = zip.file('word/settings.xml');
+        if (settingsXml) { var settingsContent = await settingsXml.async('string'); if (state.removeMetadata) { settingsContent = settingsContent.replace(/<w:defaultTabStop[^>]*\/>/g, ''); settingsContent = settingsContent.replace(/<w:trackRevisions[^>]*\/>/g, ''); } zip.file('word/settings.xml', settingsContent, { compression: 'DEFLATE', compressionOptions: { level: 6 } }); }
+        if (state.removeMetadata) {
+            var coreXml = zip.file('docProps/core.xml'); if (coreXml) zip.file('docProps/core.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"></cp:coreProperties>');
+            var appXml = zip.file('docProps/app.xml'); if (appXml) zip.file('docProps/app.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>MaskingTool</Application></Properties>');
+            var customXml = zip.file('docProps/custom.xml'); if (customXml) zip.remove('docProps/custom.xml');
+        }
+        if (progressCallback) progressCallback(90);
+        var blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', compression: 'DEFLATE', compressionOptions: { level: 9 } });
+        if (progressCallback) progressCallback(100); return blob;
+    }
+    function maskDocxXml(xmlContent, fileName, changes) {
+        var parts = xmlContent.split(/(<[^>]+>)/g);
+        for (var i = 0; i < parts.length; i++) {
+            var part = parts[i];
+            if (!part.startsWith('<') && part.trim().length > 0) { var maskedPart = maskText(part, fileName, changes); parts[i] = maskedPart; }
+            if (part.startsWith('<') && !part.startsWith('</') && !part.endsWith('/>')) { var attrMasked = maskDocxAttributes(part, fileName, changes); parts[i] = attrMasked; }
+        }
+        return parts.join('');
+    }
+    async function maskDocxXmlAsync(xmlContent, fileName, changes, progressCallback) {
+        var parts = xmlContent.split(/(<[^>]+>)/g); var totalParts = parts.length;
+        for (var i = 0; i < parts.length; i++) {
+            var part = parts[i];
+            if (!part.startsWith('<') && part.trim().length > 0) { var maskedPart = await maskTextAsync(part, fileName, changes); parts[i] = maskedPart; }
+            if (part.startsWith('<') && !part.startsWith('</') && !part.endsWith('/>')) { var attrMasked = await maskDocxAttributesAsync(part, fileName, changes); parts[i] = attrMasked; }
+            if (i % 100 === 0 && progressCallback) { progressCallback((i / totalParts) * 100); await new Promise(function(resolve){ setTimeout(resolve, 0); }); }
+        }
+        return parts.join('');
+    }
+    function maskDocxAttributes(xmlTag, fileName, changes) {
+        var attrRegex = /(w:(?:val|alt|desc|title|tooltip|name|id))=["']([^"']+)["']/gi;
+        return xmlTag.replace(attrRegex, function(match, attrName, attrValue) {
+            if (attrValue.trim().length < 3) return match; var attrChanges = [];
+            var masked = maskText(attrValue, fileName, attrChanges);
+            if (attrChanges.length > 0) { changes.push.apply(changes, attrChanges.map(function(c){ return Object.assign({}, c, { source: 'attribute: ' + attrName }); })); return attrName + '="' + masked + '"'; }
+            return match;
+        });
+    }
+    async function maskDocxAttributesAsync(xmlTag, fileName, changes) {
+        var attrRegex = /(w:(?:val|alt|desc|title|tooltip|name|id))=["']([^"']+)["']/gi; var result = xmlTag; var match;
+        while ((match = attrRegex.exec(xmlTag)) !== null) {
+            var attrName = match[1]; var attrValue = match[2]; if (attrValue.trim().length < 3) continue;
+            var attrChanges = []; var masked = await maskTextAsync(attrValue, fileName, attrChanges);
+            if (attrChanges.length > 0) { changes.push.apply(changes, attrChanges.map(function(c){ return Object.assign({}, c, { source: 'attribute: ' + attrName }); })); result = result.replace(match[0], attrName + '="' + masked + '"'); }
+        }
+        return result;
+    }
+
+    // ==================== XLSX PROCESSING WITH COLUMN TYPING ====================
+    async function processXlsxWithYield(file, fileName, ext, changes, progressCallback) {
+        var data = await file.arrayBuffer(); if (progressCallback) progressCallback(10);
+        var wb = XLSX.read(data, { type: 'array', cellStyles: true }); if (progressCallback) progressCallback(20);
+        var totalSheets = wb.SheetNames.length;
+        var totalCells = 0, processedCells = 0;
+        // Reset self-detected columns for this file
+        state.selfDetectedColumns = { commercial: [], personal: [], logins: [] };
+        // Build trie from list data for fast lookup
+        companyNameTrie = new CompanyNameTrie();
+        state.listData.forEach(function(values){
+            values.forEach(function(v){ if (v.length > 3) companyNameTrie.insert(v); });
+        });
+        // Phase 1: Column type detection - first pass to collect sample values
+        var columnTypes = {}; // sheetName -> colIndex -> type
+        var columnValues = {}; // sheetName -> colIndex -> [values]
+        wb.SheetNames.forEach(function(sheetName){
+            var ws = wb.Sheets[sheetName]; if (!ws || !ws['!ref']) return;
+            var range = XLSX.utils.decode_range(ws['!ref']);
+            columnValues[sheetName] = {};
+            // First, check headers for column name matching
+            for (var C = range.s.c; C <= range.e.c; ++C) {
+                var headerAddr = XLSX.utils.encode_cell({ r: range.s.r, c: C });
+                var headerCell = ws[headerAddr];
+                var headerText = headerCell && headerCell.v !== undefined ? String(headerCell.v) : '';
+                var detectedType = detectColumnType(headerText);
+                if (detectedType) {
+                    columnTypes[sheetName] = columnTypes[sheetName] || {};
+                    columnTypes[sheetName][C] = detectedType;
+                    var key = fileName + '|' + sheetName + '|' + C;
+                    columnTypeCache.set(key, detectedType);
+                }
+                columnValues[sheetName][C] = [];
+            }
+            // Collect sample values (up to 20 per column)
+            for (var R = range.s.r + 1; R <= range.e.r && R <= range.s.r + 20; ++R) {
+                for (var C = range.s.c; C <= range.e.c; ++C) {
+                    var addr = XLSX.utils.encode_cell({ r: R, c: C });
+                    var cell = ws[addr];
+                    if (cell && cell.v !== undefined && cell.v !== null) {
+                        columnValues[sheetName][C].push(String(cell.v));
+                    }
+                }
+            }
+        });
+        // Build header lookup for exclusion check
+        var columnHeaders = {};
+        wb.SheetNames.forEach(function(sheetName){
+            var ws = wb.Sheets[sheetName]; if (!ws || !ws['!ref']) return;
+            var range = XLSX.utils.decode_range(ws['!ref']);
+            columnHeaders[sheetName] = {};
+            for (var C = range.s.c; C <= range.e.c; ++C) {
+                var headerAddr = XLSX.utils.encode_cell({ r: range.s.r, c: C });
+                var headerCell = ws[headerAddr];
+                columnHeaders[sheetName][C] = headerCell && headerCell.v !== undefined ? String(headerCell.v) : '';
+            }
+        });
+
+        // Self-learning: detect column types from cell values
+        wb.SheetNames.forEach(function(sheetName){
+            if (!columnValues[sheetName]) return;
+            var cols = Object.keys(columnValues[sheetName]);
+            for (var i = 0; i < cols.length; i++) {
+                var C = parseInt(cols[i]);
+                if (columnTypes[sheetName] && columnTypes[sheetName][C]) continue;
+                var headerText = columnHeaders[sheetName] && columnHeaders[sheetName][C];
+                if (isColumnExcluded(headerText)) continue;
+                var values = columnValues[sheetName][C];
+                if (values.length === 0) continue;
+                var inferredType = detectColumnTypeFromCells(values, 10, headerText);
+                if (inferredType) {
+                    columnTypes[sheetName] = columnTypes[sheetName] || {};
+                    columnTypes[sheetName][C] = inferredType;
+                    var headerAddr = XLSX.utils.encode_cell({ r: 0, c: C });
+                    var ws = wb.Sheets[sheetName];
+                    var headerCell = ws[headerAddr];
+                    var colName = headerCell && headerCell.v ? String(headerCell.v) : 'Столбец ' + (C + 1);
+                    if (inferredType === 'company' && state.selfDetectedColumns.commercial.indexOf(colName) === -1) state.selfDetectedColumns.commercial.push(colName);
+                    if (inferredType === 'person' && state.selfDetectedColumns.personal.indexOf(colName) === -1) state.selfDetectedColumns.personal.push(colName);
+                    if (inferredType === 'login' && state.selfDetectedColumns.logins.indexOf(colName) === -1) state.selfDetectedColumns.logins.push(colName);
+                }
+            }
+        });
+        // Count total cells
+        wb.SheetNames.forEach(function(sheetName){ var ws = wb.Sheets[sheetName]; if (!ws || !ws['!ref']) return; var range = XLSX.utils.decode_range(ws['!ref']); totalCells += (range.e.r - range.s.r + 1) * (range.e.c - range.s.c + 1); });
+        // Phase 2: Process cells with column type awareness (skip excluded columns)
+        for (var s = 0; s < wb.SheetNames.length; s++) {
+            var sheetName = wb.SheetNames[s]; var ws = wb.Sheets[sheetName]; if (!ws || !ws['!ref']) continue;
+            var range = XLSX.utils.decode_range(ws['!ref']);
+            for (var R = range.s.r; R <= range.e.r; ++R) {
+                for (var C = range.s.c; C <= range.e.c; ++C) {
+                    var addr = XLSX.utils.encode_cell({ r: R, c: C }); var cell = ws[addr];
+                    if (cell && cell.v !== undefined && cell.v !== null) {
+                        var val = String(cell.v); var fileChanges = [];
+                        var headerText = columnHeaders[sheetName] && columnHeaders[sheetName][C];
+                        var isExcluded = isColumnExcluded(headerText);
+                        var colType = !isExcluded && columnTypes[sheetName] && columnTypes[sheetName][C];
+                        var masked;
+                        if (colType && R > range.s.r) {
+                            masked = applyMaskByType(val, colType);
+                            fileChanges.push({
+                                type: colType === 'company' ? 'Организация (колонка)' : colType === 'person' ? 'ФИО (колонка)' : 'Логин (колонка)',
+                                original: maskPreview(val), masked: masked, rule: 'column_type:' + colType, fileName: fileName, cell: addr, sheet: sheetName
+                            });
+                        } else if (!isExcluded) {
+                            if (val.length > 100) masked = await maskTextAsync(val, fileName, fileChanges); else masked = maskText(val, fileName, fileChanges);
+                        }
+                        if (fileChanges.length > 0) { cell.v = masked; cell.t = 's'; delete cell.w; delete cell.z; changes.push.apply(changes, fileChanges.map(function(c){ return Object.assign({}, c, { cell: addr, sheet: sheetName }); })); }
+                    }
+                    processedCells++;
+                    if (processedCells % 200 === 0) {
+                        if (progressCallback) { var sheetProgress = (processedCells / totalCells) * 60; progressCallback(20 + sheetProgress); }
+                        await new Promise(function(resolve){ setTimeout(resolve, 1); });
+                    }
+                }
+            }
+        }
+        if (progressCallback) progressCallback(85);
+        if (state.removeMetadata) { if (wb.Props) { wb.Props.Creator = ''; wb.Props.LastModifiedBy = ''; wb.Props.ModifiedDate = new Date().toISOString(); wb.Props.CreatedDate = new Date().toISOString(); } }
+        if (progressCallback) progressCallback(95);
+		var lowerName = fileName.toLowerCase();
+		var outExt = lowerName.endsWith('.xlsb') ? 'xlsb' : 'xlsx';
+
+		var bookType = outExt;
+		var mimeType = outExt === 'xlsb'
+		  ? 'application/vnd.ms-excel.sheet.binary.macroEnabled.12'
+		  : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+		var newWbData = XLSX.write(wb, {
+		  type: 'array',
+		  bookType: bookType,
+		  compression: true
+		});
+
+		if (progressCallback) progressCallback(100);
+
+		return new Blob([newWbData], { type: mimeType });
+    }
+
+    // ==================== MASK TEXT INTERNAL (async with multi-template) ====================
+    async function maskTextInternal(text, fileName, changes, progressCallback) {
+        var result = text; var totalIterations = 0; var startTime = Date.now(); var maxTotalTime = 120000;
+        // Check list-based masking
+        var isListOnly = state.activeTemplates.length === 1 && state.activeTemplates[0] === 'listmask';
+        if (isListOnly) { result = await applyListMaskingAsync(result, fileName, changes, progressCallback); return result; }
+        // Get union of rules from all active templates
+        var activeRules = getActiveRulesFromTemplates();
+        // Also apply list masking if listmask is one of active templates
+        if (state.activeTemplates.indexOf('listmask') !== -1 && state.listData.size > 0) {
+            result = await applyListMaskingAsync(result, fileName, changes);
+        }
+        for (var r = 0; r < activeRules.length; r++) {
+            var rule = activeRules[r];
+            for (var p = 0; p < rule.patterns.length; p++) {
+                var pattern = rule.patterns[p]; try {
+                    var regex = new RegExp(pattern.regex.source, pattern.regex.flags); var match;
+                    var patternStartTime = Date.now(); var matchCount = 0;
+                    while ((match = regex.exec(result)) !== null) {
+                        if (Date.now() - patternStartTime > MAX_REGEX_TIME) { console.warn('Pattern timeout:', pattern.type); break; }
+                        if (Date.now() - startTime > maxTotalTime) { console.warn('Total masking timeout for file:', fileName); return result; }
+                        var original = match[0]; var masked = createMask(original, pattern.type);
+                        var replacementIndex = result.indexOf(original, regex.lastIndex - original.length);
+                        if (replacementIndex !== -1) { result = result.substring(0, replacementIndex) + masked + result.substring(replacementIndex + original.length); regex.lastIndex = replacementIndex + masked.length; }
+                        changes.push({ type: pattern.type, original: maskPreview(original), masked: masked, rule: rule.name, fileName: fileName });
+                        matchCount++; totalIterations++;
+                        if (totalIterations % YIELD_INTERVAL === 0) await new Promise(function(resolve){ setTimeout(resolve, 0); });
+                    }
+                } catch(e) { console.warn('Regex error:', pattern.regex.source, e); }
+            }
+        }
+        // Process custom patterns
+        for (var i = 0; i < state.customPatterns.length; i++) {
+            var cp = state.customPatterns[i]; if (!cp.enabled || !cp.regex) continue;
+            try { var regex = new RegExp(cp.regex, 'g'); var match; var patternStartTime = Date.now();
+                while ((match = regex.exec(result)) !== null) {
+                    if (Date.now() - patternStartTime > MAX_REGEX_TIME) { console.warn('Custom pattern timeout:', cp.name); break; }
+                    var original = match[0]; var masked = createMask(original, cp.type);
+                    var replacementIndex = result.indexOf(original, regex.lastIndex - original.length);
+                    if (replacementIndex !== -1) { result = result.substring(0, replacementIndex) + masked + result.substring(replacementIndex + original.length); regex.lastIndex = replacementIndex + masked.length; }
+                    changes.push({ type: cp.type, original: maskPreview(original), masked: masked, rule: 'Пользовательский: ' + cp.name, fileName: fileName });
+                    totalIterations++; if (totalIterations % YIELD_INTERVAL === 0) await new Promise(function(resolve){ setTimeout(resolve, 0); });
+                }
+            } catch(e){}
+        }
+        return result;
+    }
+async function applyListMaskingAsync(text, fileName, changes, progressCallback) {
+  var result = text;
+  var totalReplacements = 0;
+
+  // state.listData — Map: ключ = имя файла-списка, значение = Set значений
+  for (const [listName, values] of state.listData.entries()) {
+    // Длинные значения сначала, чтобы не рвать короткими
+    var sortedValues = Array.from(values).sort(function(a, b) {
+      return b.length - a.length;
+    });
+
+    for (var v = 0; v < sortedValues.length; v++) {
+      var value = sortedValues[v];
+      if (!value || value.length < 2) continue;
+
+      var index = result.indexOf(value);
+      var loopCount = 0;
+      var maxLoops = 1000;
+
+      while (index !== -1 && loopCount++ < maxLoops) {
+        var original = result.substring(index, index + value.length);
+        var masked = createMask(original, 'list'); // тип можешь подставить свой
+
+        result = result.substring(0, index) + masked + result.substring(index + value.length);
+
+        changes.push({
+          type: 'list',
+          original: original,
+          maskPreview: masked,
+          masked: masked,
+          rule: listName,
+          fileName: fileName
+        });
+
+        totalReplacements++;
+
+        // Реальный yield каждые 50 замен
+        if (totalReplacements % 50 === 0) {
+          if (progressCallback) {
+            progressCallback(totalReplacements); // опционально, можно убрать
+          }
+          await new Promise(function(resolve) { setTimeout(resolve, 0); });
+        }
+
+        index = result.indexOf(value, index + masked.length);
+      }
+    }
+  }
+
+  return result;
+}
+    function applyListMasking(text, fileName, changes) {
+        var result = text;
+        state.listData.forEach(function(values, listName){
+            var sortedValues = Array.from(values).sort(function(a, b){ return b.length - a.length; });
+            sortedValues.forEach(function(value){
+                if (value.length < 2) return;
+                var index = result.indexOf(value); var loopCount = 0; var maxLoops = 1000;
+                while (index !== -1 && loopCount < maxLoops) {
+                    loopCount++; var original = result.substring(index, index + value.length);
+                    var masked = createMask(original, 'Значение из списка');
+                    result = result.substring(0, index) + masked + result.substring(index + value.length);
+                    changes.push({ type: 'Значение из списка', original: maskPreview(original), masked: masked, rule: 'Список: ' + listName, fileName: fileName });
+                    index = result.indexOf(value, index + masked.length);
+                }
+            });
+        });
+        return result;
+    }
+
+    // ==================== SYNC MASKING (for small files) ====================
+    function maskText(text, fileName, changes) { if (!text) return text; return maskTextInternalSync(text, fileName, changes); }
+    function maskTextInternalSync(text, fileName, changes) {
+        var result = text; var totalIterations = 0; var startTime = Date.now(); var maxTotalTime = 120000;
+        var isListOnly = state.activeTemplates.length === 1 && state.activeTemplates[0] === 'listmask';
+        if (isListOnly) { result = applyListMasking(result, fileName, changes); return result; }
+        var activeRules = getActiveRulesFromTemplates();
+        if (state.activeTemplates.indexOf('listmask') !== -1 && state.listData.size > 0) result = applyListMasking(result, fileName, changes);
+        for (var r = 0; r < activeRules.length; r++) {
+            var rule = activeRules[r];
+            for (var p = 0; p < rule.patterns.length; p++) {
+                var pattern = rule.patterns[p]; try {
+                    var regex = new RegExp(pattern.regex.source, pattern.regex.flags); var match; var patternStartTime = Date.now();
+                    while ((match = regex.exec(result)) !== null) {
+                        if (Date.now() - patternStartTime > MAX_REGEX_TIME) { console.warn('Pattern timeout:', pattern.type); break; }
+                        if (Date.now() - startTime > maxTotalTime) { console.warn('Total masking timeout for file:', fileName); return result; }
+                        var original = match[0]; var masked = createMask(original, pattern.type);
+                        var replacementIndex = result.indexOf(original, regex.lastIndex - original.length);
+                        if (replacementIndex !== -1) { result = result.substring(0, replacementIndex) + masked + result.substring(replacementIndex + original.length); regex.lastIndex = replacementIndex + masked.length; }
+                        changes.push({ type: pattern.type, original: maskPreview(original), masked: masked, rule: rule.name, fileName: fileName });
+                        totalIterations++;
+                    }
+                } catch(e) { console.warn('Regex error:', pattern.regex.source, e); }
+            }
+        }
+        for (var i = 0; i < state.customPatterns.length; i++) {
+            var cp = state.customPatterns[i]; if (!cp.enabled || !cp.regex) continue;
+            try { var regex = new RegExp(cp.regex, 'g'); var match; var patternStartTime = Date.now();
+                while ((match = regex.exec(result)) !== null) {
+                    if (Date.now() - patternStartTime > MAX_REGEX_TIME) { console.warn('Custom pattern timeout:', cp.name); break; }
+                    var original = match[0]; var masked = createMask(original, cp.type);
+                    var replacementIndex = result.indexOf(original, regex.lastIndex - original.length);
+                    if (replacementIndex !== -1) { result = result.substring(0, replacementIndex) + masked + result.substring(replacementIndex + original.length); regex.lastIndex = replacementIndex + masked.length; }
+                    changes.push({ type: cp.type, original: maskPreview(original), masked: masked, rule: 'Пользовательский: ' + cp.name, fileName: fileName }); totalIterations++;
+                }
+            } catch(e){}
+        }
+        return result;
+    }
+
+    // ==================== MASK CREATION ====================
+    function createMask(original, type) {
+        var char = state.maskChar || '*'; var mode = state.maskMode || 'preserve';
+        if (mode === 'replace') return '[ЗАМАСКИРОВАНО]';
+        if (mode === 'partial') { var len = original.length; if (len <= 4) return char.repeat(len); return char.repeat(len - 4) + original.slice(-4); }
+        return original.replace(/[a-zA-Zа-яА-ЯёЁ0-9@._%+\-]/g, char);
+    }
+    function maskPreview(str) { if (str.length <= 8) return str.slice(0, 2) + '***'; return str.slice(0, 4) + '***' + str.slice(-2); }
+
+    // ==================== RESULTS / PREVIEW ====================
+    function renderResults() {
+        var section = document.getElementById('resultsSection'); var container = document.getElementById('resultsList');
+        section.classList.remove('hidden');
+        var totalChanges = state.processedFiles.reduce(function(sum, f){ return sum + (f.changes ? f.changes.length : 0); }, 0);
+        var statsHtml = '<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">';
+        statsHtml += '<div class="stat-card rounded-xl p-4 text-center"><div class="text-2xl font-bold text-indigo-400">' + state.processedFiles.length + '</div><div class="text-xs text-slate-400">Файлов</div></div>';
+        statsHtml += '<div class="stat-card rounded-xl p-4 text-center"><div class="text-2xl font-bold text-purple-400">' + totalChanges + '</div><div class="text-xs text-slate-400">Всего замен</div></div>';
+        var uniqueTypes = new Set(); state.processedFiles.forEach(function(f){ if (f.changes) f.changes.forEach(function(c){ uniqueTypes.add(c.type); }); });
+        statsHtml += '<div class="stat-card rounded-xl p-4 text-center"><div class="text-2xl font-bold text-pink-400">' + uniqueTypes.size + '</div><div class="text-xs text-slate-400">Типов данных</div></div>';
+        statsHtml += '<div class="stat-card rounded-xl p-4 text-center"><div class="text-2xl font-bold text-green-400">' + state.processedFiles.filter(function(f){ return f.changes && f.changes.length > 0; }).length + '</div><div class="text-xs text-slate-400">Изменено</div></div></div>';
+        var filesHtml = '';
+        for (var i = 0; i < state.processedFiles.length; i++) {
+            var f = state.processedFiles[i]; var changeCounts = {};
+            if (f.changes) f.changes.forEach(function(c){ changeCounts[c.type] = (changeCounts[c.type] || 0) + 1; });
+            filesHtml += '<div class="glass rounded-xl p-5">';
+            filesHtml += '<div class="flex items-center justify-between mb-3 flex-wrap gap-2">';
+            filesHtml += '<div class="flex items-center gap-3"><span class="text-2xl">' + getFileIcon(f.ext) + '</span><div><p class="text-sm font-semibold text-white">' + f.name + '</p>';
+            filesHtml += '<p class="text-xs text-slate-500">' + (f.changes ? f.changes.length : 0) + ' изменений' + (state.removeMetadata ? ' · метаданные удалены' : '') + (f.streamed ? ' · 🌊 потоковая обработка' : '') + '</p></div></div>';
+            if (f.blob) filesHtml += '<button onclick="downloadProcessedFile(\'' + f.name + '\')" class="btn-primary text-white text-sm px-4 py-2 rounded-lg font-semibold">Скачать</button>';
+            if (f.error) filesHtml += '<span class="text-red-400 text-sm">' + f.error + '</span>';
+            filesHtml += '</div>';
+            if (Object.keys(changeCounts).length > 0) {
+                filesHtml += '<div class="flex flex-wrap gap-2">';
+                Object.entries(changeCounts).forEach(function(entry){ var type = entry[0]; var count = entry[1]; filesHtml += '<span class="chip bg-indigo-900/30 text-indigo-300 px-3 py-1 rounded-full text-xs">' + type + ': ' + count + '</span>'; });
+                filesHtml += '</div>';
+            } else { filesHtml += '<p class="text-xs text-slate-500">Нет обнаруженных данных для маскирования</p>'; }
+            filesHtml += '</div>';
+        }
+        container.innerHTML = statsHtml + filesHtml;
+    }
+    function renderPreview() {
+        var container = document.getElementById('previewContainer');
+        if (state.processedFiles.length === 0) { container.innerHTML = '<div class="text-center py-16 text-slate-500"><svg class="w-16 h-16 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg><p>Загрузите и обработайте файлы для просмотра изменений</p></div>'; return; }
+        var html = ''; var hasChanges = false;
+        for (var i = 0; i < state.processedFiles.length; i++) {
+            var f = state.processedFiles[i]; if (!f.changes || f.changes.length === 0) continue; hasChanges = true;
+            html += '<div class="glass rounded-xl p-5 mb-4 fade-in">';
+            html += '<div class="flex items-center justify-between mb-3">';
+            html += '<h3 class="text-lg font-bold text-white">' + getFileIcon(f.ext) + ' ' + f.name + '</h3>';
+            html += '<span class="text-xs bg-indigo-900/30 text-indigo-300 px-3 py-1 rounded-full">' + f.changes.length + ' изменений</span></div>';
+            html += '<div class="space-y-2 max-h-96 overflow-y-auto">';
+            for (var j = 0; j < f.changes.length; j++) {
+                var c = f.changes[j];
+                html += '<div class="grid grid-cols-1 md:grid-cols-4 gap-2 bg-slate-800/50 rounded-lg p-3 text-sm border border-slate-700/50">';
+                html += '<div class="flex items-center gap-2"><span class="text-xs text-slate-500">#' + (j + 1) + '</span><span class="text-indigo-400 font-medium text-xs">' + c.type + '</span></div>';
+                html += '<div class="md:col-span-1"><span class="text-xs text-slate-500">Правило:</span><span class="text-slate-300 text-xs ml-1">' + c.rule + '</span></div>';
+                html += '<div><span class="text-xs text-red-500">Было:</span><span class="diff-old text-xs ml-1">' + escapeHtml(c.original) + '</span></div>';
+                html += '<div><span class="text-xs text-green-500">Стало:</span><span class="diff-new text-xs ml-1">' + escapeHtml(c.masked) + '</span></div></div>';
+            }
+            html += '</div></div>';
+        }
+        if (!hasChanges) html = '<div class="text-center py-16 text-slate-500 fade-in"><svg class="w-16 h-16 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><p class="text-lg">Обработка завершена, но изменений не обнаружено</p><p class="text-sm mt-2">Возможно, в файлах нет данных, соответствующих правилам маскирования</p></div>';
+        container.innerHTML = html;
+    }
+    function escapeHtml(text) { var div = document.createElement('div'); div.textContent = text; return div.innerHTML; }
+
+    // ==================== DOWNLOADS ====================
+    function downloadProcessedFile(name) {
+        var processed = state.processedFiles.find(function(f){ return f.name === name; });
+        if (processed && processed.blob) { var url = URL.createObjectURL(processed.blob); var a = document.createElement('a'); a.href = url; a.download = 'masked_' + name; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); }
+        else if (processed && processed.content !== undefined && processed.content !== null) { var blob = new Blob([processed.content], { type: 'text/plain;charset=utf-8' }); var url = URL.createObjectURL(blob); var a = document.createElement('a'); a.href = url; a.download = 'masked_' + name; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); }
+    }
+    function downloadAllFiles() { for (var i = 0; i < state.processedFiles.length; i++) { var f = state.processedFiles[i]; if (f.blob || (f.content !== undefined && f.content !== null)) downloadProcessedFile(f.name); } }
+    function downloadTextFile(name, content) { var blob = new Blob([content], { type: 'text/plain;charset=utf-8' }); var url = URL.createObjectURL(blob); var a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); }
+    function downloadReport() {
+        var report = 'ОТЧЁТ О МАСКИРОВАНИИ ДОКУМЕНТОВ\n';
+        report += '='.repeat(60) + '\n';
+        report += 'Дата: ' + new Date().toLocaleString('ru-RU') + '\n';
+        report += 'Пользователь AD: ' + state.currentUser + '\n';
+        report += 'Шаблоны: ' + state.activeTemplates.map(function(tid){ for(var i=0;i<templates.length;i++) if(templates[i].id===tid) return templates[i].name; return tid; }).join(', ') + '\n';
+        report += 'Удаление метаданных: ' + (state.removeMetadata ? 'Включено' : 'Выключено') + '\n';
+        if (state.activeTemplates.indexOf('listmask') !== -1 && state.listFiles.length > 0) {
+            report += '\n--- Файлы-списки ---\n';
+            for (var i = 0; i < state.listFiles.length; i++) { var lf = state.listFiles[i]; report += '  - ' + lf.name + ': ' + lf.valueCount + ' значений\n'; }
+        }
+        if (state.customCommercialColumns.length > 0) { report += '\n--- Колонки Коммерческая тайна ---\n'; state.customCommercialColumns.forEach(function(c){ report += '  - ' + c + '\n'; }); }
+        if (state.customPersonalColumns.length > 0) { report += '\n--- Колонки Персональные данные ---\n'; state.customPersonalColumns.forEach(function(c){ report += '  - ' + c + '\n'; }); }
+        if (state.excludedColumns.length > 0) { report += '\n--- Исключаемые столбцы (белый список) ---\n'; state.excludedColumns.forEach(function(c){ report += '  - ' + c + ' (НЕ маскируется)\n'; }); }
+        report += '='.repeat(60) + '\n\n';
+        for (var i = 0; i < state.processedFiles.length; i++) {
+            var f = state.processedFiles[i]; report += 'Файл: ' + f.name + '\n';
+            report += 'Статус: ' + (f.error ? 'ОШИБКА: ' + f.error : 'Обработан') + '\n';
+            if (f.changes && f.changes.length > 0) {
+                report += 'Количество замен: ' + f.changes.length + '\n'; report += 'Детали:\n';
+                for (var j = 0; j < f.changes.length; j++) { var c = f.changes[j]; report += '  ' + (j + 1) + '. Тип: ' + c.type + ' | Правило: ' + c.rule + '\n'; report += '     Оригинальное значение: ' + maskPreview(c.original) + ' \u2192 Замаскировано\n'; }
+            } else { report += 'Замен не обнаружено\n'; }
+            report += '-'.repeat(40) + '\n';
+        }
+        downloadTextFile('report_masking_' + Date.now() + '.txt', report);
+    }
+
+    // ==================== NOTIFICATIONS ====================
+    function showNotification(message, type) {
+        type = type || 'info';
+        var existing = document.querySelector('.notification'); if (existing) existing.remove();
+        var colors = { info: 'bg-indigo-900/80 border-indigo-500/50 text-indigo-200', error: 'bg-red-900/80 border-red-500/50 text-red-200', success: 'bg-green-900/80 border-green-500/50 text-green-200' };
+        var notif = document.createElement('div'); notif.className = 'notification fixed top-4 right-4 z-50 px-6 py-3 rounded-lg border shadow-xl ' + (colors[type] || colors.info); notif.textContent = message; document.body.appendChild(notif);
+        setTimeout(function(){ notif.style.opacity = '0'; notif.style.transform = 'translateX(100%)'; notif.style.transition = 'all 0.3s ease'; setTimeout(function(){ notif.remove(); }, 300); }, 3000);
+    }
+
+    // ==================== START ====================
+    init();
+    </script>
+</body>
+</html>
